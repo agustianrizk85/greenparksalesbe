@@ -1,0 +1,3 @@
+# Persisted master-data store (seeded at runtime)
+/data/
+*.tmp
