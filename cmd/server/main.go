@@ -24,10 +24,24 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Dependency wiring (composition root).
-	repo, err := repository.NewRepository(cfg.DataPath)
-	if err != nil {
-		log.Fatalf("sales: failed to open data store %q: %v", cfg.DataPath, err)
+	// Dependency wiring (composition root). Use PostgreSQL when a DSN is set,
+	// otherwise persist to the JSON file.
+	var (
+		repo repository.SalesRepository
+		err  error
+	)
+	if cfg.DatabaseURL != "" {
+		repo, err = repository.NewPostgresRepository(cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("sales: postgres: %v", err)
+		}
+		log.Println("sales: using PostgreSQL store")
+	} else {
+		repo, err = repository.NewRepository(cfg.DataPath)
+		if err != nil {
+			log.Fatalf("sales: failed to open data store %q: %v", cfg.DataPath, err)
+		}
+		log.Println("sales: using file store")
 	}
 	svc := service.New(repo)
 	authSvc := auth.New(repo, cfg.SessionTTL)

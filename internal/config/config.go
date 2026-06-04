@@ -11,7 +11,8 @@ import (
 type Config struct {
 	Port        string        // HTTP port to listen on
 	AllowOrigin string        // CORS allowed origin
-	DataPath    string        // JSON file the master data is persisted to
+	DataPath    string        // JSON file the master data is persisted to (when no DB)
+	DatabaseURL string        // PostgreSQL DSN; when set, used instead of the JSON file
 	SessionTTL  time.Duration // bearer-token session lifetime
 }
 
@@ -21,6 +22,7 @@ func Load() Config {
 		Port:        getenv("SALES_PORT", "8085"),
 		AllowOrigin: getenv("SALES_ALLOW_ORIGIN", "*"),
 		DataPath:    getenv("SALES_DATA_PATH", "data/sales-data.json"),
+		DatabaseURL: getenv("SALES_DATABASE_URL", ""),
 		SessionTTL:  12 * time.Hour,
 	}
 }
