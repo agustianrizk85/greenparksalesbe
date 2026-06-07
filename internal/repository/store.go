@@ -60,8 +60,8 @@ func (u storeUser) toDomain() domain.User {
 // and assigns a stable synthetic _id to every collection row.
 func seedState() *state {
 	s := &state{
-		Period:     "Q1 + Q2 2026 · April–Juni",
-		Updated:    "17 April 2026",
+		Period:     "Q1 + Q2 2026 · Jan–Jun",
+		Updated:    "7 Juni 2026",
 		Exec:       seedExec(),
 		Monthly:    seedMonthly(),
 		Funnel:     seedFunnel(),

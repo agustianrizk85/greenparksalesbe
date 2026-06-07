@@ -24,19 +24,19 @@ func TestSummaryDerivation(t *testing.T) {
 	if s.Target2026 != 500 {
 		t.Errorf("expected target 500, got %d", s.Target2026)
 	}
-	// 68 akad / 500 target = 13.6%
-	if s.Achievement < 13.5 || s.Achievement > 13.7 {
+	// 103 akad / 500 target = 20.6%
+	if s.Achievement < 20.5 || s.Achievement > 20.7 {
 		t.Errorf("achievement out of expected range: %v", s.Achievement)
 	}
-	if s.GapToTarget != 432 {
-		t.Errorf("expected gap 432, got %d", s.GapToTarget)
+	if s.GapToTarget != 397 {
+		t.Errorf("expected gap 397, got %d", s.GapToTarget)
 	}
-	// 68 akad + 43 proses = 111 pipeline aktif
-	if s.PipelineActive != 111 {
-		t.Errorf("expected pipeline 111, got %d", s.PipelineActive)
+	// 103 akad + 41 proses = 144 pipeline aktif
+	if s.PipelineActive != 144 {
+		t.Errorf("expected pipeline 144, got %d", s.PipelineActive)
 	}
-	// 68 / 137 = 49.6%
-	if s.BookingToAkad < 49.5 || s.BookingToAkad > 49.7 {
+	// 103 / 144 = 71.5%
+	if s.BookingToAkad < 71.4 || s.BookingToAkad > 71.6 {
 		t.Errorf("booking->akad out of expected range: %v", s.BookingToAkad)
 	}
 	if s.TotalProjects != 12 {
@@ -45,8 +45,9 @@ func TestSummaryDerivation(t *testing.T) {
 	if s.TotalSalesReps != 21 {
 		t.Errorf("expected 21 sales reps, got %d", s.TotalSalesReps)
 	}
-	if s.Status != "off-track" {
-		t.Errorf("expected status off-track, got %q", s.Status)
+	// achievement 20.6% with booking->akad 71.5% → risk
+	if s.Status != "risk" {
+		t.Errorf("expected status risk, got %q", s.Status)
 	}
 }
 
@@ -112,13 +113,18 @@ func TestExecEditUpdatesSummary(t *testing.T) {
 func TestFunnelStandards(t *testing.T) {
 	svc := New(newTestRepo(t))
 	f := svc.Funnel()
-	if len(f) != 7 {
-		t.Fatalf("expected 7 funnel stages, got %d", len(f))
+	// BR-9: leads-only funnel of 5 stages ending at Purchaser (not Booking/Cash-In).
+	if len(f) != 5 {
+		t.Fatalf("expected 5 funnel stages, got %d", len(f))
 	}
-	if f[0].Std != nil {
-		t.Errorf("expected Leads stage to have nil std")
+	if f[0].Key != "Leads" || f[0].Std != nil {
+		t.Errorf("expected first stage Leads with nil std")
 	}
-	if f[len(f)-1].Key != "Cash-In" || !f[len(f)-1].IsMoney {
-		t.Errorf("expected last stage Cash-In as money")
+	last := f[len(f)-1]
+	if last.Key != "Purchaser" || last.IsMoney {
+		t.Errorf("expected last stage Purchaser (non-money), got %q", last.Key)
+	}
+	if last.Value != 74 {
+		t.Errorf("expected Purchaser = 74 per BR-9, got %d", last.Value)
 	}
 }
