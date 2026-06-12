@@ -24,19 +24,19 @@ func TestSummaryDerivation(t *testing.T) {
 	if s.Target2026 != 500 {
 		t.Errorf("expected target 500, got %d", s.Target2026)
 	}
-	// 103 akad / 500 target = 20.6%
-	if s.Achievement < 20.5 || s.Achievement > 20.7 {
+	// 104 akad / 500 target = 20.8%
+	if s.Achievement < 20.7 || s.Achievement > 20.9 {
 		t.Errorf("achievement out of expected range: %v", s.Achievement)
 	}
-	if s.GapToTarget != 397 {
-		t.Errorf("expected gap 397, got %d", s.GapToTarget)
+	if s.GapToTarget != 396 {
+		t.Errorf("expected gap 396, got %d", s.GapToTarget)
 	}
-	// 103 akad + 41 proses = 144 pipeline aktif
-	if s.PipelineActive != 144 {
-		t.Errorf("expected pipeline 144, got %d", s.PipelineActive)
+	// 104 akad + 44 proses = 148 pipeline aktif
+	if s.PipelineActive != 148 {
+		t.Errorf("expected pipeline 148, got %d", s.PipelineActive)
 	}
-	// 103 / 144 = 71.5%
-	if s.BookingToAkad < 71.4 || s.BookingToAkad > 71.6 {
+	// 104 / 148 = 70.3%
+	if s.BookingToAkad < 70.2 || s.BookingToAkad > 70.4 {
 		t.Errorf("booking->akad out of expected range: %v", s.BookingToAkad)
 	}
 	if s.TotalProjects != 12 {
@@ -45,7 +45,7 @@ func TestSummaryDerivation(t *testing.T) {
 	if s.TotalSalesReps != 21 {
 		t.Errorf("expected 21 sales reps, got %d", s.TotalSalesReps)
 	}
-	// achievement 20.6% with booking->akad 71.5% → risk
+	// achievement 20.8% with booking->akad 70.3% → risk
 	if s.Status != "risk" {
 		t.Errorf("expected status risk, got %q", s.Status)
 	}
@@ -124,7 +124,7 @@ func TestFunnelStandards(t *testing.T) {
 	if last.Key != "Purchaser" || last.IsMoney {
 		t.Errorf("expected last stage Purchaser (non-money), got %q", last.Key)
 	}
-	if last.Value != 74 {
-		t.Errorf("expected Purchaser = 74 per BR-9, got %d", last.Value)
+	if last.Value != 78 {
+		t.Errorf("expected Purchaser = 78 per BR-9, got %d", last.Value)
 	}
 }
