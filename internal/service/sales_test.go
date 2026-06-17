@@ -7,7 +7,8 @@ import (
 	"greenpark/sales/internal/repository"
 )
 
-// newTestRepo returns an in-memory repository (empty path = no file persistence).
+// newTestRepo returns an in-memory repository (empty path = no file
+// persistence). A fresh store starts EMPTY apart from the annual target.
 func newTestRepo(t *testing.T) repository.SalesRepository {
 	t.Helper()
 	repo, err := repository.NewRepository("")
@@ -17,13 +18,28 @@ func newTestRepo(t *testing.T) repository.SalesRepository {
 	return repo
 }
 
-func TestSummaryDerivation(t *testing.T) {
+func TestEmptyStoreStartsBlank(t *testing.T) {
 	svc := New(newTestRepo(t))
 	s := svc.Summary()
-
 	if s.Target2026 != 500 {
-		t.Errorf("expected target 500, got %d", s.Target2026)
+		t.Errorf("expected default target 500, got %d", s.Target2026)
 	}
+	if s.Akad != 0 || s.TotalProjects != 0 || s.TotalSalesReps != 0 {
+		t.Errorf("expected empty dashboard, got akad=%d projects=%d reps=%d", s.Akad, s.TotalProjects, s.TotalSalesReps)
+	}
+	if len(svc.Funnel()) != 0 || len(svc.Projects()) != 0 {
+		t.Errorf("expected no funnel/projects in a fresh store")
+	}
+}
+
+func TestSummaryDerivation(t *testing.T) {
+	svc := New(newTestRepo(t))
+	// Establish a known exec snapshot to derive from.
+	if err := svc.SetExec(domain.Exec{Target2026: 500, Booking: 148, Akad: 104, Proses: 44, Batal: 31, RevenueAkad: 70_822_017_000}); err != nil {
+		t.Fatalf("SetExec: %v", err)
+	}
+	s := svc.Summary()
+
 	// 104 akad / 500 target = 20.8%
 	if s.Achievement < 20.7 || s.Achievement > 20.9 {
 		t.Errorf("achievement out of expected range: %v", s.Achievement)
@@ -39,12 +55,6 @@ func TestSummaryDerivation(t *testing.T) {
 	if s.BookingToAkad < 70.2 || s.BookingToAkad > 70.4 {
 		t.Errorf("booking->akad out of expected range: %v", s.BookingToAkad)
 	}
-	if s.TotalProjects != 12 {
-		t.Errorf("expected 12 projects, got %d", s.TotalProjects)
-	}
-	if s.TotalSalesReps != 21 {
-		t.Errorf("expected 21 sales reps, got %d", s.TotalSalesReps)
-	}
 	// achievement 20.8% with booking->akad 70.3% → risk
 	if s.Status != "risk" {
 		t.Errorf("expected status risk, got %q", s.Status)
@@ -56,13 +66,16 @@ func TestProjectByCode(t *testing.T) {
 	if _, err := svc.ProjectByCode("does-not-exist"); err == nil {
 		t.Fatal("expected error for unknown project code")
 	}
+	if _, err := svc.SaveProject(domain.Project{Code: "VERLIM", Name: "Vertihauz Limo-3", Akad: 19, Cat: "utama"}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	// case-insensitive lookup
-	p, err := svc.ProjectByCode("verlim3")
+	p, err := svc.ProjectByCode("verlim")
 	if err != nil {
-		t.Fatalf("expected to find seeded project, got %v", err)
+		t.Fatalf("expected to find project, got %v", err)
 	}
 	if p.Akad != 19 {
-		t.Errorf("expected VERLIM3 akad 19, got %d", p.Akad)
+		t.Errorf("expected VERLIM akad 19, got %d", p.Akad)
 	}
 }
 
@@ -100,9 +113,7 @@ func TestSaveProjectFlowsIntoDashboard(t *testing.T) {
 
 func TestExecEditUpdatesSummary(t *testing.T) {
 	svc := New(newTestRepo(t))
-	e := svc.Exec()
-	e.Akad = 250
-	if err := svc.SetExec(e); err != nil {
+	if err := svc.SetExec(domain.Exec{Target2026: 500, Akad: 250}); err != nil {
 		t.Fatalf("SetExec: %v", err)
 	}
 	if got := svc.Summary().Achievement; got != 50 {
@@ -110,21 +121,17 @@ func TestExecEditUpdatesSummary(t *testing.T) {
 	}
 }
 
-func TestFunnelStandards(t *testing.T) {
+func TestSetFunnelRoundTrip(t *testing.T) {
 	svc := New(newTestRepo(t))
+	in := []domain.FunnelStage{
+		{Key: "Leads", Value: 20150, Target: 20150, Owner: "Marketing"},
+		{Key: "Purchaser", Value: 153, Target: 110, Owner: "Sales"},
+	}
+	if err := svc.SetFunnel(in); err != nil {
+		t.Fatalf("SetFunnel: %v", err)
+	}
 	f := svc.Funnel()
-	// BR-9: leads-only funnel of 5 stages ending at Purchaser (not Booking/Cash-In).
-	if len(f) != 5 {
-		t.Fatalf("expected 5 funnel stages, got %d", len(f))
-	}
-	if f[0].Key != "Leads" || f[0].Std != nil {
-		t.Errorf("expected first stage Leads with nil std")
-	}
-	last := f[len(f)-1]
-	if last.Key != "Purchaser" || last.IsMoney {
-		t.Errorf("expected last stage Purchaser (non-money), got %q", last.Key)
-	}
-	if last.Value != 78 {
-		t.Errorf("expected Purchaser = 78 per BR-9, got %d", last.Value)
+	if len(f) != 2 || f[0].Key != "Leads" || f[len(f)-1].Value != 153 {
+		t.Errorf("funnel round-trip mismatch: %+v", f)
 	}
 }

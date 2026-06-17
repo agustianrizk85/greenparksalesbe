@@ -33,6 +33,7 @@ type SalesRepository interface {
 	Events() domain.Events
 	Alerts() []domain.Alert
 	KPIs() []domain.KPI
+	ByProject() map[string]domain.ProjectView
 
 	// ---- singleton writes ----
 	SetMeta(period, updated string) error
@@ -59,8 +60,47 @@ type SalesRepository interface {
 	SaveKPI(domain.KPI) (domain.KPI, error)
 	DeleteKPI(id string) (bool, error)
 
+	// ---- import (upload pipeline) ----
+	// ApplyImport replaces the upload-derived slice of the dashboard with the
+	// mapped data, recording an undo snapshot + history entry. It leaves
+	// Reasons/Agents/Alerts/KPIs/ReasonMeta untouched.
+	ApplyImport(in ImportInput) (domain.ImportRecord, error)
+	ImportHistory() []domain.ImportRecord
+	Rollback(id string) (domain.ImportRecord, error)
+	// ResetData clears all dashboard data back to empty (reversible via history).
+	ResetData(by, when string) (domain.ImportRecord, error)
+
+	// Revision returns a counter that bumps on every write (FE realtime refresh).
+	Revision() int64
+
 	// ---- users (auth) ----
 	Users() []domain.User
 	UserByUsername(username string) (domain.User, error)
 	UserByID(id string) (domain.User, error)
+}
+
+// ImportInput is the payload an approved upload applies to the store.
+type ImportInput struct {
+	ID       string
+	Time     string
+	Filename string
+	By       string
+	Summary  domain.ImportSummary
+
+	Period     string
+	Updated    string
+	Exec       domain.Exec
+	Monthly    []domain.MonthPoint
+	Funnel     []domain.FunnelStage
+	Projects   []domain.Project
+	Channels   []domain.Channel
+	Sales      []domain.SalesRep
+	Stock      domain.MasterStock
+	Events     domain.Events
+	Reasons    []domain.Reason
+	ReasonMeta map[string]domain.ReasonMetaItem
+	Agents     []domain.Agent
+	Alerts     []domain.Alert
+	KPIs       []domain.KPI
+	ByProject  map[string]domain.ProjectView
 }

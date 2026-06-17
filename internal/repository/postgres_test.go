@@ -20,10 +20,7 @@ func TestPostgresStateIntegration(t *testing.T) {
 		t.Fatalf("NewPostgresRepository: %v", err)
 	}
 
-	// Seed loaded on first run.
-	if len(repo.Projects()) == 0 {
-		t.Fatal("expected seeded projects")
-	}
+	// A fresh store starts empty apart from the bootstrap accounts.
 	if _, err := repo.UserByUsername("admin"); err != nil {
 		t.Fatalf("seeded admin user missing: %v", err)
 	}

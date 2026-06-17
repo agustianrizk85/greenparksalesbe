@@ -16,6 +16,7 @@ import (
 
 	"greenpark/sales/internal/auth"
 	"greenpark/sales/internal/config"
+	"greenpark/sales/internal/gsheets"
 	"greenpark/sales/internal/repository"
 	"greenpark/sales/internal/service"
 	httptransport "greenpark/sales/internal/transport/http"
@@ -45,7 +46,20 @@ func main() {
 	}
 	svc := service.New(repo)
 	authSvc := auth.New(repo, cfg.SessionTTL)
-	handler := httptransport.NewHandler(svc, authSvc)
+
+	gs, err := gsheets.New(cfg.GoogleCreds)
+	if err != nil {
+		log.Fatalf("sales: google sheets: %v", err)
+	}
+	if gs != nil {
+		log.Printf("sales: Google Sheets sync enabled (sheet %s)", cfg.GoogleSheetID)
+	} else {
+		log.Println("sales: Google Sheets sync disabled (set SALES_GOOGLE_CREDENTIALS to enable)")
+	}
+
+	handler := httptransport.NewHandler(svc, authSvc, gs, cfg.GoogleSheetID, cfg.SyncIntervalM)
+	handler.StartAutoSync(context.Background())
+	handler.StartRealtime() // WebSocket push on data change
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)
 
 	srv := &http.Server{

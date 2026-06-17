@@ -5,9 +5,11 @@
 package service
 
 import (
+	"io"
 	"math"
 
 	"greenpark/sales/internal/domain"
+	"greenpark/sales/internal/ingest"
 	"greenpark/sales/internal/repository"
 )
 
@@ -51,6 +53,16 @@ type SalesService interface {
 	DeleteAlert(id string) (bool, error)
 	SaveKPI(domain.KPI) (domain.KPI, error)
 	DeleteKPI(id string) (bool, error)
+
+	// import (upload pipeline)
+	PreviewImport(r io.Reader) (*ingest.Result, error)
+	ApproveImport(r io.Reader, filename, by string) (domain.ImportRecord, error)
+	PreviewSheets(data map[string][][]string) (*ingest.Result, error)
+	ApproveSheets(data map[string][][]string, filename, by string) (domain.ImportRecord, error)
+	ImportHistory() []domain.ImportRecord
+	RollbackImport(id string) (domain.ImportRecord, error)
+	ResetData(by string) (domain.ImportRecord, error)
+	Revision() int64
 }
 
 type salesService struct {
@@ -81,6 +93,7 @@ func (s *salesService) Dashboard() domain.Dashboard {
 		Alerts:     s.repo.Alerts(),
 		KPIs:       s.repo.KPIs(),
 		Summary:    s.Summary(),
+		ByProject:  s.repo.ByProject(),
 	}
 }
 

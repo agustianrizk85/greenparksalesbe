@@ -21,6 +21,8 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 
 	// ---- reads (authenticated) ----
 	mux.HandleFunc("GET /api/dashboard", h.requireAuth(h.dashboard))
+	mux.HandleFunc("GET /api/version", h.requireAuth(h.version))
+	mux.HandleFunc("GET /api/ws", h.ws) // auth via ?token= (browser can't set headers)
 	mux.HandleFunc("GET /api/summary", h.requireAuth(h.summary))
 	mux.HandleFunc("GET /api/exec", h.requireAuth(h.exec))
 	mux.HandleFunc("GET /api/funnel", h.requireAuth(h.funnel))
@@ -32,6 +34,17 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	mux.HandleFunc("GET /api/agents", h.requireAuth(h.agents))
 	mux.HandleFunc("GET /api/alerts", h.requireAuth(h.alerts))
 	mux.HandleFunc("GET /api/kpis", h.requireAuth(h.kpis))
+
+	// ---- import / upload pipeline (admin) ----
+	mux.HandleFunc("POST /api/import/preview", h.requireAdmin(h.importPreview))
+	mux.HandleFunc("POST /api/import/approve", h.requireAdmin(h.importApprove))
+	mux.HandleFunc("GET /api/import/history", h.requireAdmin(h.importHistory))
+	mux.HandleFunc("POST /api/import/rollback/{id}", h.requireAdmin(h.importRollback))
+	mux.HandleFunc("POST /api/import/reset", h.requireAdmin(h.importReset))
+	mux.HandleFunc("POST /api/import/sync-preview", h.requireAdmin(h.importSyncPreview))
+	mux.HandleFunc("POST /api/import/sync-approve", h.requireAdmin(h.importSyncApprove))
+	mux.HandleFunc("GET /api/import/auto", h.requireAdmin(h.autoStatus))
+	mux.HandleFunc("PUT /api/import/auto", h.requireAdmin(h.autoSet))
 
 	// ---- singleton writes (admin) ----
 	mux.HandleFunc("PUT /api/meta", h.requireAdmin(h.setMeta))

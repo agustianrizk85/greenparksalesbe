@@ -187,6 +187,20 @@ type Summary struct {
 	Status           string  `json:"status"`    // on-track | risk | off-track
 }
 
+// ProjectView is the per-project slice of the dashboard, so the project filter
+// can make every panel (funnel, channels, sales, reasons, agents, trend) follow
+// the selected project using the same logic as the global view.
+type ProjectView struct {
+	Exec     Exec          `json:"exec"`
+	Funnel   []FunnelStage `json:"funnel"`
+	Channels []Channel     `json:"channels"`
+	Sales    []SalesRep    `json:"sales"`
+	Reasons  []Reason      `json:"reasons"`
+	Agents   []Agent       `json:"agents"`
+	Monthly  []MonthPoint  `json:"monthly"`
+	Events   Events        `json:"events"`
+}
+
 // Dashboard is the full payload consumed by the front-end in a single call.
 type Dashboard struct {
 	Period     string                    `json:"period"`
@@ -205,6 +219,7 @@ type Dashboard struct {
 	Alerts     []Alert                   `json:"alerts"`
 	KPIs       []KPI                     `json:"kpis"`
 	Summary    Summary                   `json:"summary"`
+	ByProject  map[string]ProjectView    `json:"byProject,omitempty"`
 }
 
 // Entity is implemented by every CRUD collection element. The synthetic _id is

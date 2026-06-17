@@ -1,3 +1,12 @@
 # Persisted master-data store (seeded at runtime)
 /data/
 *.tmp
+
+# Google service-account credentials — never commit
+google-creds.json
+*-credentials.json
+*.serviceaccount.json
+keen-scion-*.json
+
+# Runtime logs
+*.log

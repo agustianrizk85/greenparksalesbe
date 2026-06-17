@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -10,9 +11,10 @@ import (
 // fileRepository is a mutex-guarded SalesRepository. The full state is held in
 // memory for fast reads and flushed to its persister (file or DB) on every write.
 type fileRepository struct {
-	mu sync.RWMutex
-	p  persister
-	st *state
+	mu  sync.RWMutex
+	p   persister
+	st  *state
+	rev int64 // data revision, bumped on every write (for FE realtime refresh)
 }
 
 // NewRepository returns a SalesRepository persisted to the given JSON file path.
@@ -40,7 +42,18 @@ func newRepository(p persister) (SalesRepository, error) {
 }
 
 // persist flushes the current state. Callers must hold the write lock.
-func (r *fileRepository) persist() error { return r.p.save(r.st) }
+func (r *fileRepository) persist() error {
+	r.rev++
+	return r.p.save(r.st)
+}
+
+// Revision returns the current data revision. The front-end polls this cheaply
+// and reloads the dashboard only when it changes (realtime auto-refresh).
+func (r *fileRepository) Revision() int64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.rev
+}
 
 /* ---------------------------- reads ---------------------------- */
 
@@ -148,6 +161,16 @@ func (r *fileRepository) KPIs() []domain.KPI {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return clone(r.st.KPIs)
+}
+
+func (r *fileRepository) ByProject() map[string]domain.ProjectView {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]domain.ProjectView, len(r.st.ByProject))
+	for k, v := range r.st.ByProject {
+		out[k] = v
+	}
+	return out
 }
 
 /* ---------------------------- singleton writes ---------------------------- */
@@ -349,6 +372,209 @@ func (r *fileRepository) DeleteKPI(id string) (bool, error) {
 		return false, nil
 	}
 	return true, r.persist()
+}
+
+/* ---------------------------- import ---------------------------- */
+
+// maxImportHistory caps how many history entries (with undo snapshots) we keep.
+const maxImportHistory = 20
+
+// takeSnapshot captures the full dashboard state for one-step rollback. Callers
+// must hold the write lock.
+func (r *fileRepository) takeSnapshot() *snapshot {
+	return &snapshot{
+		Period: r.st.Period, Updated: r.st.Updated, Exec: r.st.Exec,
+		Monthly: clone(r.st.Monthly), Funnel: clone(r.st.Funnel),
+		Projects: clone(r.st.Projects), Channels: clone(r.st.Channels),
+		Sales: clone(r.st.Sales), Stock: r.st.Stock, Events: r.st.Events,
+		ReasonMeta: cloneReasonMeta(r.st.ReasonMeta), Reasons: clone(r.st.Reasons),
+		Agents: clone(r.st.Agents), Alerts: clone(r.st.Alerts), KPIs: clone(r.st.KPIs),
+		ByProject: cloneByProject(r.st.ByProject),
+	}
+}
+
+func cloneByProject(m map[string]domain.ProjectView) map[string]domain.ProjectView {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]domain.ProjectView, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// restoreSnapshot writes a snapshot back over the live state. Callers must hold
+// the write lock.
+func (r *fileRepository) restoreSnapshot(s *snapshot) {
+	r.st.Period, r.st.Updated, r.st.Exec = s.Period, s.Updated, s.Exec
+	r.st.Monthly, r.st.Funnel = s.Monthly, s.Funnel
+	r.st.Projects, r.st.Channels, r.st.Sales = s.Projects, s.Channels, s.Sales
+	r.st.Stock, r.st.Events = s.Stock, s.Events
+	r.st.ReasonMeta, r.st.Reasons = s.ReasonMeta, s.Reasons
+	r.st.Agents, r.st.Alerts, r.st.KPIs = s.Agents, s.Alerts, s.KPIs
+	r.st.ByProject = s.ByProject
+}
+
+func cloneReasonMeta(m map[string]domain.ReasonMetaItem) map[string]domain.ReasonMetaItem {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]domain.ReasonMetaItem, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func (r *fileRepository) ApplyImport(in ImportInput) (domain.ImportRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Capture the pre-import state for rollback.
+	prev := r.takeSnapshot()
+
+	// Assign stable synthetic ids to the incoming collections.
+	projects := make([]domain.Project, len(in.Projects))
+	for i, p := range in.Projects {
+		p.EntID = "prj-" + strings.ToLower(p.Code)
+		projects[i] = p
+	}
+	channels := make([]domain.Channel, len(in.Channels))
+	for i, c := range in.Channels {
+		c.EntID = "chn-" + strings.ToLower(c.Code)
+		channels[i] = c
+	}
+	reps := make([]domain.SalesRep, len(in.Sales))
+	for i, s := range in.Sales {
+		s.EntID = newID("sal")
+		reps[i] = s
+	}
+	reasons := make([]domain.Reason, len(in.Reasons))
+	for i, rs := range in.Reasons {
+		rs.EntID = "rsn-" + strings.ToLower(rs.Code)
+		reasons[i] = rs
+	}
+	agents := make([]domain.Agent, len(in.Agents))
+	for i, a := range in.Agents {
+		a.EntID = newID("agt")
+		agents[i] = a
+	}
+	alerts := make([]domain.Alert, len(in.Alerts))
+	for i, a := range in.Alerts {
+		a.EntID = newID("alt")
+		alerts[i] = a
+	}
+	kpis := make([]domain.KPI, len(in.KPIs))
+	for i, k := range in.KPIs {
+		k.EntID = fmt.Sprintf("kpi-%02d", k.No)
+		kpis[i] = k
+	}
+
+	r.st.Period = in.Period
+	r.st.Updated = in.Updated
+	r.st.Exec = in.Exec
+	r.st.Monthly = in.Monthly
+	r.st.Funnel = in.Funnel
+	r.st.Projects = projects
+	r.st.Channels = channels
+	r.st.Sales = reps
+	r.st.Stock = in.Stock
+	r.st.Events = in.Events
+	// Reasons/ReasonMeta come from the REASON CODE ANALYSIS sheet when present;
+	// leave the existing ones untouched if the upload carried none. Agents/Alerts/
+	// KPIs are derived from DATA PENJUALAN, so always replace them.
+	if len(reasons) > 0 {
+		r.st.Reasons = reasons
+	}
+	if len(in.ReasonMeta) > 0 {
+		r.st.ReasonMeta = in.ReasonMeta
+	}
+	r.st.Agents = agents
+	r.st.Alerts = alerts
+	r.st.KPIs = kpis
+	r.st.ByProject = in.ByProject
+
+	entry := importEntry{
+		ID: in.ID, Time: in.Time, Filename: in.Filename, By: in.By,
+		Summary: in.Summary, Prev: prev,
+	}
+	// Newest first; cap history length.
+	r.st.Imports = append([]importEntry{entry}, r.st.Imports...)
+	if len(r.st.Imports) > maxImportHistory {
+		r.st.Imports = r.st.Imports[:maxImportHistory]
+	}
+	return entry.toRecord(), r.persist()
+}
+
+func (r *fileRepository) ImportHistory() []domain.ImportRecord {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.ImportRecord, len(r.st.Imports))
+	for i, e := range r.st.Imports {
+		out[i] = e.toRecord()
+	}
+	return out
+}
+
+func (r *fileRepository) Rollback(id string) (domain.ImportRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.st.Imports {
+		e := &r.st.Imports[i]
+		if e.ID != id {
+			continue
+		}
+		if e.RolledBack || e.Prev == nil {
+			return domain.ImportRecord{}, ErrNotFound
+		}
+		r.restoreSnapshot(e.Prev)
+		e.RolledBack = true
+		e.Prev = nil // snapshot consumed
+		return e.toRecord(), r.persist()
+	}
+	return domain.ImportRecord{}, ErrNotFound
+}
+
+// ResetData clears all dashboard data (upload-derived figures AND the manual
+// collections), returning the store to its empty state while keeping the annual
+// target. The pre-reset state is snapshotted into the history so the wipe can be
+// rolled back in one step.
+func (r *fileRepository) ResetData(by, when string) (domain.ImportRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	prev := r.takeSnapshot()
+
+	r.st.Period = "Belum ada data — silakan upload Excel"
+	r.st.Updated = "—"
+	r.st.Exec = domain.Exec{Target2026: prev.Exec.Target2026}
+	r.st.Monthly = []domain.MonthPoint{}
+	r.st.Funnel = []domain.FunnelStage{}
+	r.st.Projects = []domain.Project{}
+	r.st.Channels = []domain.Channel{}
+	r.st.Sales = []domain.SalesRep{}
+	r.st.Stock = domain.MasterStock{}
+	r.st.Events = domain.Events{}
+	r.st.ReasonMeta = map[string]domain.ReasonMetaItem{}
+	r.st.Reasons = []domain.Reason{}
+	r.st.Agents = []domain.Agent{}
+	r.st.Alerts = []domain.Alert{}
+	r.st.KPIs = []domain.KPI{}
+	r.st.ByProject = map[string]domain.ProjectView{}
+
+	entry := importEntry{
+		ID:       newID("rst"),
+		Time:     when,
+		Filename: "(hapus semua data)",
+		By:       by,
+		Prev:     prev,
+	}
+	r.st.Imports = append([]importEntry{entry}, r.st.Imports...)
+	if len(r.st.Imports) > maxImportHistory {
+		r.st.Imports = r.st.Imports[:maxImportHistory]
+	}
+	return entry.toRecord(), r.persist()
 }
 
 /* ---------------------------- users ---------------------------- */

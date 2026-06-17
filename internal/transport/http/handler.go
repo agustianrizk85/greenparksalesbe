@@ -9,19 +9,26 @@ import (
 
 	"greenpark/sales/internal/auth"
 	"greenpark/sales/internal/domain"
+	"greenpark/sales/internal/gsheets"
 	"greenpark/sales/internal/repository"
 	"greenpark/sales/internal/service"
 )
 
 // Handler holds the dependencies for the HTTP handlers.
 type Handler struct {
-	svc  service.SalesService
-	auth *auth.Service
+	svc     service.SalesService
+	auth    *auth.Service
+	sync    *gsheets.Client
+	sheetID string
+	auto    *autoSync
+	hub     *wsHub
 }
 
-// NewHandler creates a Handler bound to the service and auth service.
-func NewHandler(svc service.SalesService, authSvc *auth.Service) *Handler {
-	return &Handler{svc: svc, auth: authSvc}
+// NewHandler creates a Handler bound to the service and auth service. sync may
+// be nil when Google Sheets sync is not configured. intervalMin seeds the
+// auto-sync schedule (0 = disabled until turned on from the UI).
+func NewHandler(svc service.SalesService, authSvc *auth.Service, sync *gsheets.Client, sheetID string, intervalMin int) *Handler {
+	return &Handler{svc: svc, auth: authSvc, sync: sync, sheetID: sheetID, auto: newAutoSync(intervalMin), hub: newWSHub()}
 }
 
 /* ---------------------------- auth plumbing ---------------------------- */
@@ -109,6 +116,12 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) dashboard(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.Dashboard())
+}
+
+// version returns the current data revision; the front-end polls it cheaply and
+// reloads the dashboard only when it changes (realtime auto-refresh).
+func (h *Handler) version(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]int64{"rev": h.svc.Revision()})
 }
 
 func (h *Handler) summary(w http.ResponseWriter, _ *http.Request) {

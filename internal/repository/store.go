@@ -4,10 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"greenpark/sales/internal/domain"
 )
@@ -30,7 +28,51 @@ type state struct {
 	Events     domain.Events                    `json:"events"`
 	Alerts     []domain.Alert                   `json:"alerts"`
 	KPIs       []domain.KPI                     `json:"kpis"`
+	ByProject  map[string]domain.ProjectView    `json:"byProject,omitempty"`
 	Users      []storeUser                      `json:"users"`
+	Imports    []importEntry                    `json:"imports,omitempty"`
+}
+
+// snapshot captures the full dashboard state so an import or a reset can be
+// rolled back in one step. An import only mutates the upload-derived slice, but
+// snapshotting everything keeps rollback correct for the "delete all data"
+// reset too (which clears the manual collections as well).
+type snapshot struct {
+	Period     string                           `json:"period"`
+	Updated    string                           `json:"updated"`
+	Exec       domain.Exec                      `json:"exec"`
+	Monthly    []domain.MonthPoint              `json:"monthly"`
+	Funnel     []domain.FunnelStage             `json:"funnel"`
+	Projects   []domain.Project                 `json:"projects"`
+	Channels   []domain.Channel                 `json:"channels"`
+	Sales      []domain.SalesRep                `json:"sales"`
+	Stock      domain.MasterStock               `json:"stock"`
+	Events     domain.Events                    `json:"events"`
+	ReasonMeta map[string]domain.ReasonMetaItem `json:"reasonMeta"`
+	Reasons    []domain.Reason                  `json:"reasons"`
+	Agents     []domain.Agent                   `json:"agents"`
+	Alerts     []domain.Alert                   `json:"alerts"`
+	KPIs       []domain.KPI                     `json:"kpis"`
+	ByProject  map[string]domain.ProjectView    `json:"byProject,omitempty"`
+}
+
+// importEntry is a persisted import-history row. Prev holds the pre-import state
+// for one-step rollback; it is cleared once an import has been rolled back.
+type importEntry struct {
+	ID         string               `json:"id"`
+	Time       string               `json:"time"`
+	Filename   string               `json:"filename"`
+	By         string               `json:"by"`
+	Summary    domain.ImportSummary `json:"summary"`
+	RolledBack bool                 `json:"rolledBack"`
+	Prev       *snapshot            `json:"prev,omitempty"`
+}
+
+func (e importEntry) toRecord() domain.ImportRecord {
+	return domain.ImportRecord{
+		ID: e.ID, Time: e.Time, Filename: e.Filename, By: e.By,
+		Summary: e.Summary, RolledBack: e.RolledBack, CanRollback: e.Prev != nil && !e.RolledBack,
+	}
 }
 
 // storeUser is the persisted user shape. Unlike domain.User (which hides
@@ -56,54 +98,28 @@ func (u storeUser) toDomain() domain.User {
 	}
 }
 
-// seedState builds the default data set (seed figures + admin/viewer accounts)
-// and assigns a stable synthetic _id to every collection row.
+// seedState builds a fresh store: an EMPTY dashboard data set plus the default
+// accounts. Every figure is left at its zero value (collections nil/empty,
+// singletons zeroed) so the dashboard reads empty until the first workbook is
+// imported. Only the annual akad target is pre-set, as it is configuration.
 func seedState() *state {
-	s := &state{
-		Period:     "Q1 + Q2 2026 · Jan–Jun",
-		Updated:    "12 Juni 2026",
-		Exec:       seedExec(),
-		Monthly:    seedMonthly(),
-		Funnel:     seedFunnel(),
-		Projects:   seedProjects(),
-		Channels:   seedChannels(),
-		Sales:      seedSales(),
-		ReasonMeta: seedReasonMeta(),
-		Reasons:    seedReasons(),
-		Agents:     seedAgents(),
-		Stock:      seedStock(),
-		Events:     seedEvents(),
-		Alerts:     seedAlerts(),
-		KPIs:       seedKPIs(),
+	return &state{
+		Period:  "Belum ada data — silakan upload Excel",
+		Updated: "—",
+		Exec:    domain.Exec{Target2026: defaultTarget2026},
+		// Non-nil empty slices so the JSON contract stays [] (never null), which
+		// the front-end maps over directly.
+		Monthly:    []domain.MonthPoint{},
+		Funnel:     []domain.FunnelStage{},
+		Projects:   []domain.Project{},
+		Channels:   []domain.Channel{},
+		Sales:      []domain.SalesRep{},
+		ReasonMeta: map[string]domain.ReasonMetaItem{},
+		Reasons:    []domain.Reason{},
+		Agents:     []domain.Agent{},
+		Alerts:     []domain.Alert{},
+		KPIs:       []domain.KPI{},
 		Users:      seedUsers(),
-	}
-	assignSeedIDs(s)
-	return s
-}
-
-// assignSeedIDs gives each seeded row a readable, deterministic _id derived from
-// its natural key (code/name/no) or position.
-func assignSeedIDs(s *state) {
-	for i := range s.Projects {
-		s.Projects[i].EntID = "prj-" + strings.ToLower(s.Projects[i].Code)
-	}
-	for i := range s.Channels {
-		s.Channels[i].EntID = "chn-" + strings.ToLower(s.Channels[i].Code)
-	}
-	for i := range s.Reasons {
-		s.Reasons[i].EntID = "rsn-" + strings.ToLower(s.Reasons[i].Code)
-	}
-	for i := range s.Sales {
-		s.Sales[i].EntID = fmt.Sprintf("sal-%02d", i+1)
-	}
-	for i := range s.Agents {
-		s.Agents[i].EntID = fmt.Sprintf("agt-%02d", i+1)
-	}
-	for i := range s.Alerts {
-		s.Alerts[i].EntID = fmt.Sprintf("alt-%02d", i+1)
-	}
-	for i := range s.KPIs {
-		s.KPIs[i].EntID = fmt.Sprintf("kpi-%02d", s.KPIs[i].No)
 	}
 }
 
