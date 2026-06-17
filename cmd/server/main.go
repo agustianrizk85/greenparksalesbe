@@ -49,7 +49,10 @@ func main() {
 
 	gs, err := gsheets.New(cfg.GoogleCreds)
 	if err != nil {
-		log.Fatalf("sales: google sheets: %v", err)
+		// A missing/unreadable credential must NOT take down the dashboard —
+		// just disable the optional sync feature and keep serving.
+		log.Printf("sales: Google Sheets sync disabled (kredensial tidak terbaca: %v)", err)
+		gs = nil
 	}
 	if gs != nil {
 		log.Printf("sales: Google Sheets sync enabled (sheet %s)", cfg.GoogleSheetID)
