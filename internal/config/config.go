@@ -19,6 +19,10 @@ type Config struct {
 	GoogleCreds   string        // path to the Google service-account JSON (enables Sheets sync)
 	GoogleSheetID string        // Google Spreadsheet ID to sync from
 	SyncIntervalM int           // auto-sync interval in minutes (0 = off at startup)
+
+	OpenRouterKey   string // OpenRouter API key (enables AI-generated alerts)
+	OpenRouterModel string // OpenRouter model id
+	OpenRouterSite  string // optional HTTP-Referer for OpenRouter attribution
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -32,6 +36,10 @@ func Load() Config {
 		GoogleCreds:   getenv("SALES_GOOGLE_CREDENTIALS", ""),
 		GoogleSheetID: getenv("SALES_GSHEET_ID", "1FR0xlB5pEmrbsm3SAtfVAUUG3sDM9MHiseUdTyTD1j8"),
 		SyncIntervalM: atoiDefault(getenv("SALES_SYNC_INTERVAL_MIN", "0"), 0),
+
+		OpenRouterKey:   getenv("OPENROUTER_API_KEY", ""),
+		OpenRouterModel: getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free"),
+		OpenRouterSite:  getenv("OPENROUTER_SITE", "http://localhost"),
 	}
 }
 

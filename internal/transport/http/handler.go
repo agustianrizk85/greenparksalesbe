@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
+	"greenpark/sales/internal/ai"
 	"greenpark/sales/internal/auth"
 	"greenpark/sales/internal/domain"
 	"greenpark/sales/internal/gsheets"
@@ -22,13 +25,20 @@ type Handler struct {
 	sheetID string
 	auto    *autoSync
 	hub     *wsHub
+
+	ai       *ai.Client
+	aiMu     sync.Mutex
+	aiCached []domain.Alert
+	aiRev    int64
+	aiAt     time.Time
 }
 
 // NewHandler creates a Handler bound to the service and auth service. sync may
 // be nil when Google Sheets sync is not configured. intervalMin seeds the
-// auto-sync schedule (0 = disabled until turned on from the UI).
-func NewHandler(svc service.SalesService, authSvc *auth.Service, sync *gsheets.Client, sheetID string, intervalMin int) *Handler {
-	return &Handler{svc: svc, auth: authSvc, sync: sync, sheetID: sheetID, auto: newAutoSync(intervalMin), hub: newWSHub()}
+// auto-sync schedule (0 = disabled until turned on from the UI). aiClient
+// powers the AI alerts (falls back to rule-based when not configured).
+func NewHandler(svc service.SalesService, authSvc *auth.Service, sync *gsheets.Client, sheetID string, intervalMin int, aiClient *ai.Client) *Handler {
+	return &Handler{svc: svc, auth: authSvc, sync: sync, sheetID: sheetID, auto: newAutoSync(intervalMin), hub: newWSHub(), ai: aiClient}
 }
 
 /* ---------------------------- auth plumbing ---------------------------- */
@@ -171,6 +181,41 @@ func (h *Handler) agents(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) alerts(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.svc.Alerts())
+}
+
+// aiAlerts returns the AI-generated "AI Alert & Action Plan" (OpenRouter),
+// cached per data revision for 10 minutes. Falls back to the rule-based alerts
+// when AI is not configured or a call fails — the panel always has content.
+func (h *Handler) aiAlerts(w http.ResponseWriter, r *http.Request) {
+	rule := h.svc.Alerts()
+	if h.ai == nil || !h.ai.Configured() {
+		writeJSON(w, http.StatusOK, map[string]any{"alerts": rule, "source": "rules"})
+		return
+	}
+
+	rev := h.svc.Revision()
+	h.aiMu.Lock()
+	fresh := h.aiCached != nil && h.aiRev == rev && time.Since(h.aiAt) < 10*time.Minute
+	cached := h.aiCached
+	h.aiMu.Unlock()
+	if fresh {
+		writeJSON(w, http.StatusOK, map[string]any{"alerts": cached, "source": "ai", "cached": true})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 110*time.Second)
+	defer cancel()
+	d := h.svc.Dashboard()
+	alerts, err := h.ai.Alerts(ctx, &d)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"alerts": rule, "source": "rules", "error": err.Error()})
+		return
+	}
+
+	h.aiMu.Lock()
+	h.aiCached, h.aiRev, h.aiAt = alerts, rev, time.Now()
+	h.aiMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": alerts, "source": "ai"})
 }
 
 func (h *Handler) kpis(w http.ResponseWriter, _ *http.Request) {

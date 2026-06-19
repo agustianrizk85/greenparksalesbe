@@ -88,11 +88,27 @@ func buildProjects(res *Result, sd *salesData) []domain.Project {
 			Total: total, Akad: a.akad, Proses: a.proses, Batal: a.batal,
 			Rev: a.rev, Ads: a.ads, CPA: cpa,
 			Eff:   efficiency(a.akad, cpa),
-			Cat:   "pendukung",
+			Cat:   categorize(a.akad),
 			Stock: res.stockByProj[code],
 		})
 	}
 	return out
+}
+
+// categorize tiers a project by akad volume (no master classification exists in
+// the source data, so it is derived from performance):
+//   Mesin Utama  — akad ≥ 10 (the main revenue engines)
+//   Pembenahan   — akad ≤ 1  (zero / near-zero, needs fixing)
+//   Pendukung    — everything in between.
+func categorize(akad int) string {
+	switch {
+	case akad >= 10:
+		return "utama"
+	case akad <= 1:
+		return "pembenahan"
+	default:
+		return "pendukung"
+	}
 }
 
 func efficiency(akad int, cpa float64) string {

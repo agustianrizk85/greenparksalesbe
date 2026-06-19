@@ -74,15 +74,38 @@ func New(repo repository.SalesRepository) SalesService {
 	return &salesService{repo: repo}
 }
 
+// categorizeAkad tiers a project by akad volume. No master classification
+// exists in the source data, so the category is derived from performance:
+// Mesin Utama (akad ≥ 10), Pembenahan (akad ≤ 1), Pendukung (in between).
+func categorizeAkad(akad int) string {
+	switch {
+	case akad >= 10:
+		return "utama"
+	case akad <= 1:
+		return "pembenahan"
+	default:
+		return "pendukung"
+	}
+}
+
 // Dashboard assembles the full payload including the derived summary.
 func (s *salesService) Dashboard() domain.Dashboard {
+	// Re-derive the project category from akad on every read, so snapshots
+	// stored before categorisation existed (all "pendukung") are corrected
+	// without a re-import. (Copy to avoid mutating the repo's backing slice.)
+	src := s.repo.Projects()
+	projects := make([]domain.Project, len(src))
+	copy(projects, src)
+	for i := range projects {
+		projects[i].Cat = categorizeAkad(projects[i].Akad)
+	}
 	return domain.Dashboard{
 		Period:     s.repo.Period(),
 		Updated:    s.repo.Updated(),
 		Exec:       s.repo.Exec(),
 		Monthly:    s.repo.Monthly(),
 		Funnel:     s.repo.Funnel(),
-		Projects:   s.repo.Projects(),
+		Projects:   projects,
 		Channels:   s.repo.Channels(),
 		Sales:      s.repo.Sales(),
 		ReasonMeta: s.repo.ReasonMeta(),

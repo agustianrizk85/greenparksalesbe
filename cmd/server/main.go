@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"greenpark/sales/internal/ai"
 	"greenpark/sales/internal/auth"
 	"greenpark/sales/internal/config"
 	"greenpark/sales/internal/gsheets"
@@ -60,7 +61,14 @@ func main() {
 		log.Println("sales: Google Sheets sync disabled (set SALES_GOOGLE_CREDENTIALS to enable)")
 	}
 
-	handler := httptransport.NewHandler(svc, authSvc, gs, cfg.GoogleSheetID, cfg.SyncIntervalM)
+	aiClient := ai.New(cfg.OpenRouterKey, cfg.OpenRouterModel, cfg.OpenRouterSite)
+	if aiClient.Configured() {
+		log.Printf("sales: AI alerts enabled (OpenRouter model %s)", cfg.OpenRouterModel)
+	} else {
+		log.Println("sales: AI alerts disabled (set OPENROUTER_API_KEY) — using rule-based alerts")
+	}
+
+	handler := httptransport.NewHandler(svc, authSvc, gs, cfg.GoogleSheetID, cfg.SyncIntervalM, aiClient)
 	handler.StartAutoSync(context.Background())
 	handler.StartRealtime() // WebSocket push on data change
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)

@@ -150,6 +150,7 @@ type Alert struct {
 	PIC      string `json:"pic"`
 	Deadline string `json:"deadline"`
 	Action   string `json:"action"`
+	Impact   string `json:"impact"` // expected outcome of the command (CEO Command Panel)
 }
 
 // KPI is a scorecard indicator with its actual value, target and owner.

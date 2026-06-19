@@ -33,6 +33,7 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	mux.HandleFunc("GET /api/reasons", h.requireAuth(h.reasons))
 	mux.HandleFunc("GET /api/agents", h.requireAuth(h.agents))
 	mux.HandleFunc("GET /api/alerts", h.requireAuth(h.alerts))
+	mux.HandleFunc("GET /api/ai/alerts", h.requireAuth(h.aiAlerts))
 	mux.HandleFunc("GET /api/kpis", h.requireAuth(h.kpis))
 
 	// ---- import / upload pipeline (admin) ----
