@@ -22,13 +22,29 @@ go run ./cmd/server
 # sales API listening on http://localhost:8085
 ```
 
+Dengan **Google Sheets live-sync** (snapshot menarik DATA PENJUALAN + META ADS
+INPUT langsung dari spreadsheet, refresh otomatis tiap interval):
+
+```powershell
+./run.ps1   # set kredensial + SALES_SYNC_INTERVAL_MIN, lalu go run ./cmd/server
+```
+
+Cek koneksi sheet tanpa menjalankan server (fetch + ingest, tanpa menulis data):
+
+```powershell
+$env:SALES_GOOGLE_CREDENTIALS = "...\keen-scion-...json"; go run ./cmd/checksync
+```
+
 ### Konfigurasi (environment variable)
 
-| Variabel             | Default                | Keterangan                              |
-| -------------------- | ---------------------- | --------------------------------------- |
-| `SALES_PORT`         | `8085`                 | Port HTTP                               |
-| `SALES_ALLOW_ORIGIN` | `*`                    | Origin CORS yang diizinkan              |
-| `SALES_DATA_PATH`    | `data/sales-data.json` | File JSON tempat master data disimpan   |
+| Variabel                  | Default                | Keterangan                                                  |
+| ------------------------- | ---------------------- | ----------------------------------------------------------- |
+| `SALES_PORT`              | `8085`                 | Port HTTP                                                   |
+| `SALES_ALLOW_ORIGIN`      | `*`                    | Origin CORS yang diizinkan                                  |
+| `SALES_DATA_PATH`         | `data/sales-data.json` | File JSON tempat master data disimpan                       |
+| `SALES_GOOGLE_CREDENTIALS`| `` (kosong → sync off) | Path service-account JSON (read-only Sheets). Kosong = sync nonaktif |
+| `SALES_GSHEET_ID`         | `1FR0xlB5…D1j8`        | Spreadsheet sumber (DATA PENJUALAN, META ADS INPUT, dll.)   |
+| `SALES_SYNC_INTERVAL_MIN` | `0` (manual)           | Interval auto-sync (menit); `0` = hanya sync manual         |
 
 ## Autentikasi
 

@@ -58,6 +58,7 @@ func assemble(res *Result, funnel []domain.FunnelStage, sd *salesData) {
 	d.Summary = buildSummary(d)
 	d.Alerts = buildAlerts(d, res.Headline)
 	d.ByProject = buildByProject(res, sd)
+	d.SaleRows = sd.rows // transaction-level records for the drill-downs
 }
 
 // estimatePotential approximates pipeline revenue: proses count × average akad
@@ -212,7 +213,7 @@ func projectView(pa *projAgg, pl *projLeads) domain.ProjectView {
 		v.Agents = agentsFromMap(pa.agentOrder, pa.agents)
 		v.Monthly = monthlyFrom(pa.monthly)
 		v.Events = domain.Events{
-			Attributed: domain.EventAttributed{Name: "Walk-in / Undangan", Booking: pa.eventBooking, Akad: pa.eventAkad, Conv: int(pctOf(pa.eventAkad, pa.eventBooking))},
+			Attributed: domain.EventAttributed{Name: "Walkin", Booking: pa.eventBooking, Akad: pa.eventAkad, Conv: int(pctOf(pa.eventAkad, pa.eventBooking))},
 			Note:       "Event/Walk-in untuk project ini (proxy DATA PENJUALAN).",
 		}
 	}

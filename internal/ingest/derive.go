@@ -68,7 +68,7 @@ func agentStatus(akad, conv int) string {
 func buildEvents(sd *salesData) domain.Events {
 	return domain.Events{
 		Attributed: domain.EventAttributed{
-			Name:    "Walk-in / Undangan",
+			Name:    "Walkin",
 			Booking: sd.eventBooking,
 			Akad:    sd.eventAkad,
 			Conv:    int(pctOf(sd.eventAkad, sd.eventBooking)),

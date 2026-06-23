@@ -3,6 +3,8 @@ package ingest
 import (
 	"strings"
 	"time"
+
+	"greenpark/sales/internal/domain"
 )
 
 // projAgg accumulates one project's sales position, including the per-project
@@ -97,6 +99,16 @@ type salesData struct {
 	projOrder           []string               // first-seen order for stable output
 	repOrder            []string
 	chanOrder           []string
+	rows                []domain.SaleRow // transaction-level records for drill-downs
+}
+
+// fmtDate normalizes a date cell to YYYY-MM-DD when parseable, otherwise returns
+// the trimmed raw value (so unparsed entries still show in the drill-down table).
+func fmtDate(s string) string {
+	if t, ok := ParseDate(s); ok {
+		return t.Format("2006-01-02")
+	}
+	return trim(s)
 }
 
 func isAgentSource(src string) bool { return hasAny(src, "agent") }
@@ -117,15 +129,13 @@ func channelCategory(raw string) string {
 	case contains(ls, "whatsapp"), ls == "wa":
 		return "WhatsApp"
 	case contains(ls, "walk"), contains(ls, "undangan"), ls == "wi":
-		return "Walk-in / Undangan"
+		return "Walkin"
 	case contains(ls, "agent"):
 		return "Agent"
 	case contains(ls, "staff"), contains(ls, "referal"), contains(ls, "referral"):
 		return "Staff / Referal"
 	case contains(ls, "buyer get buyer"), contains(ls, "bgb"):
 		return "Buyer Get Buyer"
-	case contains(ls, "leads"):
-		return "Leads - Lainnya"
 	default:
 		return s
 	}
@@ -160,6 +170,7 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 	cRev := rs.col("revenue")
 	cStatus := rs.col("status")
 	cSumber := rs.col("sumber")
+	cUnit := rs.col("kavling", "blok", "unit", "no unit", "kode unit", "no kavling")
 	// Channel panel uses the CLEANED Platform column (the last "Platform" header,
 	// which carries the standard categories), not the raw Sumber.
 	cChannel := -1
@@ -254,8 +265,20 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 			}
 		}
 
+		// BRD: Booking 2026 = transaksi dengan Tgl Booking tahun 2026 saja.
+		// Booking 2025 yang akad 2026 TIDAK dihitung sebagai booking (tapi tetap
+		// terhitung sebagai akad). Tanggal kosong/tak terbaca → dianggap 2026.
+		booking2026 := true
+		if cBook >= 0 {
+			if t, ok := ParseDate(rs.cell(i, cBook)); ok && t.Year() != 2026 {
+				booking2026 = false
+			}
+		}
+
 		// --- channel category (BRD 7 standar) dari kolom Platform yang sudah bersih ---
-		if cChannel >= 0 {
+		// Sumber Penjualan = booking 2026 saja (transaksi booking 2025 dikecualikan,
+		// konsisten dengan metrik Total Booking).
+		if cChannel >= 0 && booking2026 {
 			cat := channelCategory(rs.cell(i, cChannel))
 			ch := sd.chan_(cat)
 			ch.total++
@@ -363,15 +386,35 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 			pa.batal++
 		}
 
-		// BRD: Booking 2026 = transaksi dengan Tgl Booking tahun 2026 saja.
-		// Booking 2025 yang akad 2026 TIDAK dihitung sebagai booking (tapi tetap
-		// terhitung sebagai akad). Tanggal kosong/tak terbaca → dianggap 2026.
-		booking2026 := true
-		if cBook >= 0 {
-			if t, ok := ParseDate(rs.cell(i, cBook)); ok && t.Year() != 2026 {
-				booking2026 = false
-			}
+		// --- transaction record (drill-down) ---
+		sr := domain.SaleRow{
+			Project: code, Name: name, Closer: closer,
+			Status: status, RawStatus: rawStatus, Revenue: rev,
 		}
+		if cUnit >= 0 {
+			sr.Unit = trim(rs.cell(i, cUnit))
+		}
+		if cPhone >= 0 {
+			sr.Phone = NormalizePhone(rs.cell(i, cPhone))
+		}
+		if cSumber >= 0 {
+			sr.Sumber = collapseSpace(rs.cell(i, cSumber))
+		}
+		// Channel = cleaned Platform category, so the Sumber Penjualan drill-down
+		// can list identities per source exactly as the panel groups them.
+		if cChannel >= 0 {
+			sr.Channel = channelCategory(rs.cell(i, cChannel))
+		}
+		if cBook >= 0 {
+			sr.Booking = fmtDate(rs.cell(i, cBook))
+		}
+		if cAkadDate >= 0 {
+			sr.Akad = fmtDate(rs.cell(i, cAkadDate))
+		}
+		sd.rows = append(sd.rows, sr)
+
+		// Booking 2026 (dihitung di atas, sebelum blok channel) → total booking.
+		// Booking 2025 yang akad 2026 tetap terhitung akad tapi bukan booking.
 		if booking2026 {
 			sd.booking++
 			pa.booking++

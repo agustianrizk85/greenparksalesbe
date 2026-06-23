@@ -120,10 +120,11 @@ type Result struct {
 	leadsByProj map[string]*projLeads
 }
 
-// projLeads is one project's leads-side funnel and reason distribution.
+// projLeads is one project's leads-side funnel and reason distribution. Reasons
+// are keyed by (layer, code) — see reasonKey — and carry capped identities.
 type projLeads struct {
 	leads, valid, cv, pv int
-	reasons              map[string]int
+	reasons              map[string]*reasonAgg
 }
 
 // addIssue appends a finding to the result.

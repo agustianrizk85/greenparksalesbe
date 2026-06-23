@@ -94,14 +94,28 @@ type ReasonMetaItem struct {
 	Target string `json:"target"`
 }
 
-// Reason is an opportunity-loss reason code in the 3-layer system.
+// ReasonLead is one lost prospect's identity behind a reason code, sourced from
+// MASTER DATA_LEADS. Embedded (capped) in the dashboard payload so the Reason
+// panel can drill down to a per-reason identity table.
+type ReasonLead struct {
+	Name    string `json:"name"`
+	Phone   string `json:"phone"`
+	Project string `json:"project"`
+	Date    string `json:"date"`   // YYYY-MM-DD when parseable, else raw
+	Status  string `json:"status"` // final follow-up stage that classified the loss
+}
+
+// Reason is an opportunity-loss reason code in the 3-layer system. The same code
+// can occur in more than one layer (e.g. an Unreachable lost at CV→PV), so a
+// reason row is identified by the (Layer, Code) pair.
 type Reason struct {
-	EntID string `json:"_id"`
-	Code  string `json:"code"`
-	Name  string `json:"name"`
-	ID    string `json:"id"`    // Indonesian label
-	Layer string `json:"layer"` // L1 | L2 | L3
-	Count int    `json:"count"`
+	EntID string       `json:"_id"`
+	Code  string       `json:"code"`
+	Name  string       `json:"name"`
+	ID    string       `json:"id"`    // Indonesian label
+	Layer string       `json:"layer"` // L1 | L2 | L3
+	Count int          `json:"count"`
+	Leads []ReasonLead `json:"leads,omitempty"` // capped identity sample
 }
 
 // Agent is an external agent/broker contributor.
@@ -188,6 +202,25 @@ type Summary struct {
 	Status           string  `json:"status"`    // on-track | risk | off-track
 }
 
+// SaleRow is one transaction record from DATA PENJUALAN, surfaced alongside the
+// aggregates so the front-end drill-downs (Panel 8 Booking→Akad→Cash-In, and the
+// funnel's Purchaser stage) can list the underlying deals, not just the counts.
+// The set is small (~booking + batal rows), so it embeds in the payload directly.
+type SaleRow struct {
+	Project   string `json:"project"`
+	Unit      string `json:"unit,omitempty"`      // kavling / blok-no when present
+	Name      string `json:"name"`                // customer name
+	Phone     string `json:"phone,omitempty"`     // normalized
+	Closer    string `json:"closer,omitempty"`    // deal closer / sales
+	Status    string `json:"status"`              // akad | proses | batal (classified)
+	RawStatus string `json:"rawStatus,omitempty"` // original status cell
+	Booking   string `json:"booking,omitempty"`   // Tgl Booking, YYYY-MM-DD when parseable
+	Akad      string `json:"akad,omitempty"`       // Tgl Akad, YYYY-MM-DD when parseable
+	Revenue   int64  `json:"revenue"`             // Rp (akad value)
+	Sumber    string `json:"sumber,omitempty"`    // raw source (LEADS/AGENT/WI/…)
+	Channel   string `json:"channel,omitempty"`   // cleaned Platform category (Sumber Penjualan panel)
+}
+
 // ProjectView is the per-project slice of the dashboard, so the project filter
 // can make every panel (funnel, channels, sales, reasons, agents, trend) follow
 // the selected project using the same logic as the global view.
@@ -221,6 +254,7 @@ type Dashboard struct {
 	KPIs       []KPI                     `json:"kpis"`
 	Summary    Summary                   `json:"summary"`
 	ByProject  map[string]ProjectView    `json:"byProject,omitempty"`
+	SaleRows   []SaleRow                 `json:"saleRows,omitempty"`
 }
 
 // Entity is implemented by every CRUD collection element. The synthetic _id is

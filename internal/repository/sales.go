@@ -34,6 +34,7 @@ type SalesRepository interface {
 	Alerts() []domain.Alert
 	KPIs() []domain.KPI
 	ByProject() map[string]domain.ProjectView
+	SaleRows() []domain.SaleRow
 
 	// ---- singleton writes ----
 	SetMeta(period, updated string) error
@@ -103,4 +104,5 @@ type ImportInput struct {
 	Alerts     []domain.Alert
 	KPIs       []domain.KPI
 	ByProject  map[string]domain.ProjectView
+	SaleRows   []domain.SaleRow
 }

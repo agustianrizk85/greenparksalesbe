@@ -117,6 +117,7 @@ func (s *salesService) Dashboard() domain.Dashboard {
 		KPIs:       s.repo.KPIs(),
 		Summary:    s.Summary(),
 		ByProject:  s.repo.ByProject(),
+		SaleRows:   s.repo.SaleRows(),
 	}
 }
 

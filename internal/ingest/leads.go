@@ -8,17 +8,48 @@ import (
 	"greenpark/sales/internal/domain"
 )
 
-// reasonsFrom turns reason-code counts into ordered domain.Reason rows (only
-// codes that occurred), using the lead reason definitions.
-func reasonsFrom(counts map[string]int) []domain.Reason {
-	out := make([]domain.Reason, 0, len(leadReasonDefs))
-	for _, def := range leadReasonDefs {
-		if n := counts[def.Code]; n > 0 {
-			def.Count = n
-			out = append(out, def)
+// reasonAgg accumulates one (layer, code) bucket: its count and a capped sample
+// of the lost prospects' identities (for the drill-down identity table).
+type reasonAgg struct {
+	count int
+	leads []domain.ReasonLead
+}
+
+// add records one lost prospect under this bucket, capping the identity sample.
+func (a *reasonAgg) add(l domain.ReasonLead) {
+	a.count++
+	if len(a.leads) < maxReasonLeads {
+		a.leads = append(a.leads, l)
+	}
+}
+
+// reasonKey composes the bucket key for a (layer, code) pair.
+func reasonKey(layer, code string) string { return layer + "|" + code }
+
+// reasonsFrom turns the (layer, code) buckets into ordered domain.Reason rows,
+// carrying the capped identity sample for each. Rows are ordered by layer then
+// by descending count so the L1/L2/L3 columns render in a stable order.
+func reasonsFrom(buckets map[string]*reasonAgg) []domain.Reason {
+	out := make([]domain.Reason, 0, len(buckets))
+	for _, layer := range []string{"L1", "L2", "L3"} {
+		for _, code := range reasonCodeOrder {
+			agg := buckets[reasonKey(layer, code)]
+			if agg == nil || agg.count == 0 {
+				continue
+			}
+			def := reasonCodeDefs[code]
+			out = append(out, domain.Reason{
+				Code: code, Name: def.Name, ID: def.ID, Layer: layer,
+				Count: agg.count, Leads: agg.leads,
+			})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Layer != out[j].Layer {
+			return out[i].Layer < out[j].Layer
+		}
+		return out[i].Count > out[j].Count
+	})
 	return out
 }
 
@@ -36,40 +67,107 @@ func inPeriod(t time.Time) bool {
 	return !t.Before(periodStart) && !t.After(periodEnd)
 }
 
-// leadReasonDefs are the loss-reason codes derivable from a lead's follow-up
-// status in MASTER DATA_LEADS. The leads stage captures Layer-1 losses
-// (Leads → CV); deeper layers (CV→PV, PV→Booking) live in visit/sales data.
-var leadReasonDefs = []domain.Reason{
-	{Code: "ENG", Name: "Not Engaged", ID: "Belum Engage / Need Follow Up", Layer: "L1"},
-	{Code: "UNR", Name: "Unreachable", ID: "Tidak Terhubung / No Respond", Layer: "L1"},
-	{Code: "NQ", Name: "Not Qualified / Interest", ID: "Tidak Tertarik / Tidak Sesuai", Layer: "L1"},
-	{Code: "WRN", Name: "Wrong Number", ID: "Nomor Salah / Tidak Valid", Layer: "L1"},
+// maxReasonLeads caps how many identity rows are embedded per (layer, code)
+// bucket, keeping the dashboard payload bounded while still backing the
+// drill-down identity table (the Count keeps the exact total).
+const maxReasonLeads = 500
+
+// reasonDef holds the display labels for a loss-reason code. The same code can
+// appear in any layer; the layer is derived from how far the lead progressed.
+type reasonDef struct {
+	Name string
+	ID   string
 }
 
+// reasonCodeDefs maps each granular reason code (recorded in MASTER DATA_LEADS
+// column L as "CODE - DESCRIPTION") to its display labels, grouped into the
+// 3-layer Opportunity-Loss system (see reasonCodeLayer).
+var reasonCodeDefs = map[string]reasonDef{
+	// Layer 1 — Leads → CV
+	"UNR": {Name: "Unreachable", ID: "Tidak Terhubung / No Respond"},
+	"ENG": {Name: "Not Engaged", ID: "Belum Engage / No Schedule Locked"},
+	"REJ": {Name: "Rejected", ID: "Ditolak / Tidak Valid"},
+	"NQ":  {Name: "Not Qualified", ID: "Tidak Memenuhi Syarat"},
+	// Layer 2 — CV → PV
+	"SCH": {Name: "Schedule Conflict", ID: "Jadwal Bentrok"},
+	"FOR": {Name: "Force Majeure", ID: "Force Majeure"},
+	"COM": {Name: "Weak Commitment", ID: "Komitmen Lemah"},
+	"INF": {Name: "Insufficient Information", ID: "Informasi Kurang"},
+	"REM": {Name: "Reminder Failure", ID: "Gagal Reminder"},
+	"EXP": {Name: "Expectation Not Set", ID: "Ekspektasi Tidak Selaras"},
+	// Layer 3 — PV → P
+	"FIN": {Name: "Financially Infeasible", ID: "Tidak Mampu Finansial"},
+	"POL": {Name: "Policy Constraint", ID: "Kendala Kebijakan"},
+	"PRD": {Name: "Product Mismatch", ID: "Produk Tidak Sesuai"},
+	"NST": {Name: "No Next Step", ID: "Tidak Ada Langkah Lanjut"},
+	"TIM": {Name: "Timing Delay", ID: "Penundaan Waktu"},
+	"CMP": {Name: "Competitor Won", ID: "Kalah dari Kompetitor"},
+	"DM":  {Name: "Decision Maker Missing", ID: "Pengambil Keputusan Tidak Ada"},
+}
+
+// reasonCodeLayer assigns each code to its loss layer (per the printed legend).
+var reasonCodeLayer = map[string]string{
+	"UNR": "L1", "ENG": "L1", "REJ": "L1", "NQ": "L1",
+	"SCH": "L2", "FOR": "L2", "COM": "L2", "INF": "L2", "REM": "L2", "EXP": "L2",
+	"FIN": "L3", "POL": "L3", "PRD": "L3", "NST": "L3", "TIM": "L3", "CMP": "L3", "DM": "L3",
+}
+
+// reasonCodeOrder fixes the within-layer ordering used when counts tie (legend
+// order per layer).
+var reasonCodeOrder = []string{
+	"UNR", "ENG", "REJ", "NQ", // L1
+	"SCH", "FOR", "COM", "INF", "REM", "EXP", // L2
+	"FIN", "POL", "PRD", "NST", "TIM", "CMP", "DM", // L3
+}
+
+// leadReasonMeta names the three loss layers (Leads → CV → PV → P) shown as the
+// Opportunity-Loss columns.
 var leadReasonMeta = map[string]domain.ReasonMetaItem{
 	"L1": {Stage: "Leads → CV", Target: "≥20% CV Rate"},
 	"L2": {Stage: "CV → PV", Target: "≥70% PV Rate"},
-	"L3": {Stage: "PV → Booking", Target: "≥30% Booking Rate"},
+	"L3": {Stage: "PV → P", Target: "≥30% Booking Rate"},
 }
 
-// leadReasonCode maps a follow-up stage value to a loss-reason code, or "" when
-// the stage is a positive/progress status (Contacted, Visit, Booking, …).
-func leadReasonCode(stage string) string {
-	s := strings.ToLower(strings.TrimSpace(stage))
-	switch {
-	case s == "":
+// parseReasonCode extracts the leading code from a MASTER DATA_LEADS column-L
+// value ("UNR - UNREACHABLE" → UNR, "DM IG" → DM), returning "" when it is not
+// one of the known reason codes.
+func parseReasonCode(cell string) string {
+	s := strings.ToUpper(strings.TrimSpace(cell))
+	if s == "" {
 		return ""
-	case strings.Contains(s, "wrong number"):
-		return "WRN"
-	case strings.Contains(s, "unreachable"), strings.Contains(s, "no respon"), strings.Contains(s, "no respond"):
-		return "UNR"
-	case strings.Contains(s, "need follow"), strings.Contains(s, "follow up"), strings.Contains(s, "never follow"):
-		return "ENG"
-	case strings.Contains(s, "intrest"), strings.Contains(s, "interest"):
-		return "NQ"
-	default:
-		return "" // contacted / visit / confirmed visit / booking / new / survey → not a loss
 	}
+	code := s
+	if i := strings.IndexAny(s, " -"); i > 0 {
+		code = strings.TrimSpace(s[:i])
+	}
+	if _, ok := reasonCodeLayer[code]; ok {
+		return code
+	}
+	return ""
+}
+
+// findReasonCodeCol locates the (header-less) reason-code column by picking the
+// column whose cells most often parse to a known reason code.
+func findReasonCodeCol(rs rows) int {
+	maxCol := len(rs.header)
+	for _, r := range rs.data {
+		if len(r) > maxCol {
+			maxCol = len(r)
+		}
+	}
+	best, bestCount := -1, 0
+	for c := 0; c < maxCol; c++ {
+		cnt := 0
+		for i := range rs.data {
+			if parseReasonCode(rs.cell(i, c)) != "" {
+				cnt++
+			}
+		}
+		if cnt > bestCount {
+			bestCount, best = cnt, c
+		}
+	}
+	return best
 }
 
 func isWrong(stages []string) bool {
@@ -90,6 +188,7 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 	cPhone := rs.col("phone")
 	cDate := rs.col("lead in date", "date")
 	cProj := rs.col("project")
+	cReason := findReasonCodeCol(rs) // MASTER DATA_LEADS column L (header-less)
 	fu := []int{rs.col("follow up - 1", "follow up 1"), rs.col("follow up - 2"), rs.col("follow up - 3")}
 
 	if cName < 0 {
@@ -100,7 +199,19 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 	h := &res.Headline
 	seen := map[string]int{} // normalized phone → first Excel row seen
 	var leads, valid, cv, pv int
-	reasonCount := map[string]int{} // reason code → count (from final follow-up stage)
+	reasonBuckets := map[string]*reasonAgg{} // (layer|code) → count + capped identities
+
+	// bump records one lost prospect into the (layer, code) bucket of m,
+	// creating the bucket on first use.
+	bump := func(m map[string]*reasonAgg, layer, code string, l domain.ReasonLead) {
+		k := reasonKey(layer, code)
+		agg := m[k]
+		if agg == nil {
+			agg = &reasonAgg{}
+			m[k] = agg
+		}
+		agg.add(l)
+	}
 
 	stagesOf := func(i int) []string {
 		out := make([]string, 0, 3)
@@ -150,7 +261,7 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 		}
 		p, ok := res.leadsByProj[code]
 		if !ok {
-			p = &projLeads{reasons: map[string]int{}}
+			p = &projLeads{reasons: map[string]*reasonAgg{}}
 			res.leadsByProj[code] = p
 		}
 		return p
@@ -211,11 +322,28 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 			}
 		}
 
-		// Reason code (Opportunity Loss) — from this lead's FINAL follow-up stage.
-		if len(stages) > 0 {
-			if code := leadReasonCode(stages[len(stages)-1]); code != "" {
-				reasonCount[code]++
-				p.reasons[code]++
+		// Reason code (Opportunity Loss) from MASTER DATA_LEADS column L
+		// ("CODE - DESCRIPTION"), bucketed into the code's fixed layer.
+		if cReason >= 0 {
+			if code := parseReasonCode(rs.cell(i, cReason)); code != "" {
+				layer := reasonCodeLayer[code]
+				date := ""
+				if cDate >= 0 {
+					date = trim(rs.cell(i, cDate))
+					if t, ok := ParseDate(date); ok {
+						date = t.Format("2006-01-02")
+					}
+				}
+				projName := ""
+				if cProj >= 0 {
+					projName = trim(rs.cell(i, cProj))
+				}
+				lead := domain.ReasonLead{
+					Name: name, Phone: phone, Project: projName,
+					Date: date, Status: trim(rs.cell(i, cReason)),
+				}
+				bump(reasonBuckets, layer, code, lead)
+				bump(p.reasons, layer, code, lead)
 			}
 		}
 
@@ -233,8 +361,8 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 	h.Leads, h.ValidLeads, h.CV, h.PV = leads, valid, cv, pv
 	h.LeadsRaw = leads // semua data; tidak ada cleaning yang mengurangi
 
-	// Reasons sourced from MASTER DATA_LEADS (per user).
-	res.Preview.Reasons = reasonsFrom(reasonCount)
+	// Reasons sourced from MASTER DATA_LEADS (per user), classified per layer.
+	res.Preview.Reasons = reasonsFrom(reasonBuckets)
 	res.Preview.ReasonMeta = leadReasonMeta
 
 	std20, std70, std80 := 20, 70, 80
@@ -244,23 +372,4 @@ func mapLeads(rs rows, res *Result) []domain.FunnelStage {
 		{Key: "Confirmed Visit", Value: int64(cv), Target: int64(valid) * 20 / 100, Owner: "Sales", Std: &std20},
 		{Key: "Project Visitor", Value: int64(pv), Target: int64(cv) * 70 / 100, Owner: "Sales", Std: &std70},
 	}
-}
-
-// containsStage reports an exact (case-insensitive) stage match — used to keep
-// "Visit" distinct from "Confirmed Visit".
-func containsStage(stages []string, want string) bool {
-	for _, s := range stages {
-		if toLower(trim(s)) == want {
-			return true
-		}
-	}
-	return false
-}
-
-func lowerJoin(stages []string) string {
-	out := ""
-	for _, s := range stages {
-		out += toLower(s) + " | "
-	}
-	return out
 }

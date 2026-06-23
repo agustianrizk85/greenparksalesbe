@@ -173,6 +173,12 @@ func (r *fileRepository) ByProject() map[string]domain.ProjectView {
 	return out
 }
 
+func (r *fileRepository) SaleRows() []domain.SaleRow {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.SaleRows)
+}
+
 /* ---------------------------- singleton writes ---------------------------- */
 
 func (r *fileRepository) SetMeta(period, updated string) error {
@@ -389,7 +395,7 @@ func (r *fileRepository) takeSnapshot() *snapshot {
 		Sales: clone(r.st.Sales), Stock: r.st.Stock, Events: r.st.Events,
 		ReasonMeta: cloneReasonMeta(r.st.ReasonMeta), Reasons: clone(r.st.Reasons),
 		Agents: clone(r.st.Agents), Alerts: clone(r.st.Alerts), KPIs: clone(r.st.KPIs),
-		ByProject: cloneByProject(r.st.ByProject),
+		ByProject: cloneByProject(r.st.ByProject), SaleRows: clone(r.st.SaleRows),
 	}
 }
 
@@ -414,6 +420,7 @@ func (r *fileRepository) restoreSnapshot(s *snapshot) {
 	r.st.ReasonMeta, r.st.Reasons = s.ReasonMeta, s.Reasons
 	r.st.Agents, r.st.Alerts, r.st.KPIs = s.Agents, s.Alerts, s.KPIs
 	r.st.ByProject = s.ByProject
+	r.st.SaleRows = s.SaleRows
 }
 
 func cloneReasonMeta(m map[string]domain.ReasonMetaItem) map[string]domain.ReasonMetaItem {
@@ -494,6 +501,7 @@ func (r *fileRepository) ApplyImport(in ImportInput) (domain.ImportRecord, error
 	r.st.Alerts = alerts
 	r.st.KPIs = kpis
 	r.st.ByProject = in.ByProject
+	r.st.SaleRows = in.SaleRows
 
 	entry := importEntry{
 		ID: in.ID, Time: in.Time, Filename: in.Filename, By: in.By,
@@ -562,6 +570,7 @@ func (r *fileRepository) ResetData(by, when string) (domain.ImportRecord, error)
 	r.st.Alerts = []domain.Alert{}
 	r.st.KPIs = []domain.KPI{}
 	r.st.ByProject = map[string]domain.ProjectView{}
+	r.st.SaleRows = []domain.SaleRow{}
 
 	entry := importEntry{
 		ID:       newID("rst"),

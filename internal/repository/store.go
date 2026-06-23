@@ -29,6 +29,7 @@ type state struct {
 	Alerts     []domain.Alert                   `json:"alerts"`
 	KPIs       []domain.KPI                     `json:"kpis"`
 	ByProject  map[string]domain.ProjectView    `json:"byProject,omitempty"`
+	SaleRows   []domain.SaleRow                 `json:"saleRows,omitempty"`
 	Users      []storeUser                      `json:"users"`
 	Imports    []importEntry                    `json:"imports,omitempty"`
 }
@@ -54,6 +55,7 @@ type snapshot struct {
 	Alerts     []domain.Alert                   `json:"alerts"`
 	KPIs       []domain.KPI                     `json:"kpis"`
 	ByProject  map[string]domain.ProjectView    `json:"byProject,omitempty"`
+	SaleRows   []domain.SaleRow                 `json:"saleRows,omitempty"`
 }
 
 // importEntry is a persisted import-history row. Prev holds the pre-import state

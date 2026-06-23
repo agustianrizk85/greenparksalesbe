@@ -80,6 +80,7 @@ func (s *salesService) applyResult(res *ingest.Result, filename, by string) (dom
 		Alerts:     d.Alerts,
 		KPIs:       d.KPIs,
 		ByProject:  d.ByProject,
+		SaleRows:   d.SaleRows,
 	}
 	return s.repo.ApplyImport(in)
 }
