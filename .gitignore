@@ -10,3 +10,8 @@ keen-scion-*.json
 
 # Runtime logs
 *.log
+
+# compiled binaries
+*.exe
+*.exe~
+*.test
