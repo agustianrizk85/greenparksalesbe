@@ -34,6 +34,9 @@ func assemble(res *Result, funnel []domain.FunnelStage, sd *salesData) {
 	d.Exec.Akad = sd.akad
 	d.Exec.Proses = sd.proses
 	d.Exec.Batal = sd.batal
+	d.Exec.BookingNoBatal = sd.bookingNoBatal // Panel 1: booking 2026 di luar Batal
+	d.Exec.ProsesCash = sd.prosesCash         // Panel 1: proses akad Cash
+	d.Exec.ProsesKpr = sd.prosesKpr           // Panel 1: proses akad KPR
 	d.Exec.TotalPenjualan = sd.akad + sd.proses // penjualan aktif (non-batal)
 	d.Exec.RevenueAkad = sd.cashIn
 	d.Exec.PotentialRevenue = potential
@@ -203,6 +206,7 @@ func projectView(pa *projAgg, pl *projLeads) domain.ProjectView {
 		purchaser = pa.purchaser
 		v.Exec = domain.Exec{
 			Target2026: defaultTarget, Booking: pa.booking, Akad: pa.akad, Proses: pa.proses, Batal: pa.batal,
+			BookingNoBatal: pa.bookingNoBatal, ProsesCash: pa.prosesCash, ProsesKpr: pa.prosesKpr,
 			TotalPenjualan: pa.akad + pa.proses, RevenueAkad: pa.rev, AdsSpent: pa.ads,
 		}
 		if pa.akad > 0 && pa.proses > 0 {

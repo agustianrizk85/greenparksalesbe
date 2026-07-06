@@ -13,6 +13,9 @@ type Exec struct {
 	Akad             int   `json:"akad"`             // selesai akad
 	Proses           int   `json:"proses"`           // menuju akad / on proses
 	Batal            int   `json:"batal"`            // gugur / cancel
+	BookingNoBatal   int   `json:"bookingNoBatal"`   // Panel 1: booking 2026 di luar Batal (snapshot donut)
+	ProsesCash       int   `json:"prosesCash"`       // Panel 1: proses belum akad, sumber dana Cash Keras/Bertahap
+	ProsesKpr        int   `json:"prosesKpr"`        // Panel 1: proses belum akad, sumber dana KPR
 	TotalPenjualan   int   `json:"totalPenjualan"`   // booking - batal
 	RevenueAkad      int64 `json:"revenueAkad"`      // Rp terkonfirmasi akad
 	PotentialRevenue int64 `json:"potentialRevenue"` // Rp potensi dari pipeline proses
@@ -219,6 +222,7 @@ type SaleRow struct {
 	Revenue   int64  `json:"revenue"`             // Rp (akad value)
 	Sumber    string `json:"sumber,omitempty"`    // raw source (LEADS/AGENT/WI/…)
 	Channel   string `json:"channel,omitempty"`   // cleaned Platform category (Sumber Penjualan panel)
+	Funding   string `json:"funding,omitempty"`   // raw Sumber Dana (Cash Keras/Bertahap/KPR)
 }
 
 // ProjectView is the per-project slice of the dashboard, so the project filter

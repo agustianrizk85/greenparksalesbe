@@ -12,6 +12,9 @@ import (
 type projAgg struct {
 	akad, proses, batal int
 	booking, purchaser  int
+	bookingNoBatal      int // booking 2026 di luar Batal (snapshot donut)
+	prosesCash          int // proses (belum akad) sumber dana Cash Keras/Bertahap
+	prosesKpr           int // proses (belum akad) sumber dana KPR
 	eventBooking        int
 	eventAkad           int
 	rev                 int64
@@ -86,6 +89,9 @@ type chanAgg struct {
 type salesData struct {
 	akad, proses, batal int
 	booking             int // BRD: transaksi dengan Tgl Booking tahun 2026 saja
+	bookingNoBatal      int // booking 2026 di luar Batal (snapshot donut Panel 1)
+	prosesCash          int // proses (belum ada tgl akad) sumber dana Cash Keras/Bertahap
+	prosesKpr           int // proses (belum ada tgl akad) sumber dana KPR
 	cashIn              int64
 	leadsPurchaser      int // BRD: Sumber=LEADS & status != Batal
 	projects            map[string]*projAgg
@@ -160,6 +166,23 @@ func classifyStatus(s string) string {
 	}
 }
 
+// fundingClass maps a "Sumber Dana" cell (Cash Keras / Cash Bertahap / KPR) to a
+// coarse bucket for Panel 1. Robust to spelling: anything mentioning KPR → kpr;
+// cash/keras/bertahap/tunai → cash; otherwise "" (unclassified).
+func fundingClass(s string) string {
+	ls := toLower(trim(s))
+	switch {
+	case ls == "":
+		return ""
+	case hasAny(ls, "kpr"):
+		return "kpr"
+	case hasAny(ls, "cash", "keras", "bertahap", "tunai"):
+		return "cash"
+	default:
+		return ""
+	}
+}
+
 func mapPenjualan(rs rows, res *Result) *salesData {
 	cProj := rs.col("project")
 	cName := rs.col("nama", "name")
@@ -170,6 +193,7 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 	cRev := rs.col("revenue")
 	cStatus := rs.col("status")
 	cSumber := rs.col("sumber")
+	cDana := rs.col("sumber dana", "cara bayar", "cara pembayaran", "pembiayaan", "skema bayar")
 	cUnit := rs.col("kavling", "blok", "unit", "no unit", "kode unit", "no kavling")
 	// Channel panel uses the CLEANED Platform column (the last "Platform" header,
 	// which carries the standard categories), not the raw Sumber.
@@ -371,6 +395,18 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 			}
 		}
 
+		// --- sumber dana (Cash Keras/Bertahap vs KPR) + apakah tanggal akad terisi ---
+		funding := ""
+		if cDana >= 0 {
+			funding = collapseSpace(rs.cell(i, cDana))
+		}
+		hasAkadDate := false
+		if cAkadDate >= 0 {
+			if _, ok := ParseDate(rs.cell(i, cAkadDate)); ok {
+				hasAkadDate = true
+			}
+		}
+
 		// --- aggregate ---
 		switch status {
 		case "akad":
@@ -381,6 +417,17 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 		case "proses":
 			sd.proses++
 			pa.proses++
+			// Panel 1: proses (belum ada tgl akad) dipecah per sumber dana.
+			if !hasAkadDate {
+				switch fundingClass(funding) {
+				case "cash":
+					sd.prosesCash++
+					pa.prosesCash++
+				case "kpr":
+					sd.prosesKpr++
+					pa.prosesKpr++
+				}
+			}
 		case "batal":
 			sd.batal++
 			pa.batal++
@@ -400,6 +447,9 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 		if cSumber >= 0 {
 			sr.Sumber = collapseSpace(rs.cell(i, cSumber))
 		}
+		if funding != "" {
+			sr.Funding = funding
+		}
 		// Channel = cleaned Platform category, so the Sumber Penjualan drill-down
 		// can list identities per source exactly as the panel groups them.
 		if cChannel >= 0 {
@@ -418,6 +468,11 @@ func mapPenjualan(rs rows, res *Result) *salesData {
 		if booking2026 {
 			sd.booking++
 			pa.booking++
+			// Panel 1 snapshot: booking 2026 di luar Batal.
+			if status != "batal" {
+				sd.bookingNoBatal++
+				pa.bookingNoBatal++
+			}
 		}
 
 		// --- monthly trend (akad by Tgl Akad, booking by Tgl Booking) ---
