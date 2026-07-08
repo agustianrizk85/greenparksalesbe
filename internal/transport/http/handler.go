@@ -11,6 +11,7 @@ import (
 
 	"greenpark/sales/internal/ai"
 	"greenpark/sales/internal/auth"
+	"greenpark/sales/internal/authmw"
 	"greenpark/sales/internal/domain"
 	"greenpark/sales/internal/gsheets"
 	"greenpark/sales/internal/repository"
@@ -31,6 +32,31 @@ type Handler struct {
 	aiCached []domain.Alert
 	aiRev    int64
 	aiAt     time.Time
+
+	// sso accepts the unified dashboard's Ed25519 login token directly (one
+	// login, no bridge). nil = SSO off (native token only). Set via SetSSO.
+	sso *authmw.Verifier
+}
+
+// SetSSO wires the master-auth SSO verifier so requests may authenticate with
+// the unified dashboard login token in addition to the native sales token.
+func (h *Handler) SetSSO(v *authmw.Verifier) { h.sso = v }
+
+// ssoUser verifies an SSO token and maps its claims to a sales domain.User.
+// Returns false when SSO is off, the token is invalid, or it lacks sales access.
+func (h *Handler) ssoUser(tok string) (domain.User, bool) {
+	if h.sso == nil || tok == "" {
+		return domain.User{}, false
+	}
+	c, err := h.sso.Verify(tok)
+	if err != nil || !c.CanAccess("sales") {
+		return domain.User{}, false
+	}
+	role := domain.RoleViewer
+	if c.Super || c.Role("sales") == "admin" || c.Role("sales") == "kadep" || c.Role("sales") == "dirops" {
+		role = domain.RoleAdmin
+	}
+	return domain.User{ID: "sso:" + c.Subject, Username: c.Username, Name: c.Name, Role: role}, true
 }
 
 // NewHandler creates a Handler bound to the service and auth service. sync may
@@ -58,10 +84,17 @@ func bearer(r *http.Request) string {
 // requireAuth wraps a handler, rejecting requests without a valid session.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u, err := h.auth.Validate(bearer(r))
+		tok := bearer(r)
+		u, err := h.auth.Validate(tok)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, err.Error())
-			return
+			// Fall back to the unified SSO token (Ed25519 from master auth) so the
+			// dashboard can call us with ONE login token, no per-backend bridge.
+			su, ok := h.ssoUser(tok)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+			u = su
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, u)))
 	}

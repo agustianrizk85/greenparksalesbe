@@ -16,6 +16,7 @@ import (
 
 	"greenpark/sales/internal/ai"
 	"greenpark/sales/internal/auth"
+	"greenpark/sales/internal/authmw"
 	"greenpark/sales/internal/config"
 	"greenpark/sales/internal/gsheets"
 	"greenpark/sales/internal/repository"
@@ -69,6 +70,12 @@ func main() {
 	}
 
 	handler := httptransport.NewHandler(svc, authSvc, gs, cfg.GoogleSheetID, cfg.SyncIntervalM, aiClient)
+	// Accept the unified dashboard's Ed25519 SSO login token directly (one login,
+	// no token bridge) when AUTH_JWKS_URL is set. Native sales token still works.
+	if v := authmw.New(authmw.Options{JWKSURL: os.Getenv("AUTH_JWKS_URL"), Issuer: os.Getenv("AUTH_ISSUER")}); v != nil {
+		handler.SetSSO(v)
+		log.Printf("sales: SSO token acceptance enabled (jwks=%s)", os.Getenv("AUTH_JWKS_URL"))
+	}
 	handler.StartAutoSync(context.Background())
 	handler.StartRealtime() // WebSocket push on data change
 	router := httptransport.NewRouter(handler, cfg.AllowOrigin)

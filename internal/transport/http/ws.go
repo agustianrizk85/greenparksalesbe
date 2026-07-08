@@ -77,9 +77,12 @@ func (h *Handler) StartRealtime() {
 // ws upgrades the request to a WebSocket. Browsers cannot send the Authorization
 // header on a WS handshake, so the bearer token is passed as a query parameter.
 func (h *Handler) ws(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.auth.Validate(r.URL.Query().Get("token")); err != nil {
-		writeError(w, http.StatusUnauthorized, "token tidak valid")
-		return
+	tok := r.URL.Query().Get("token")
+	if _, err := h.auth.Validate(tok); err != nil {
+		if _, ok := h.ssoUser(tok); !ok {
+			writeError(w, http.StatusUnauthorized, "token tidak valid")
+			return
+		}
 	}
 	c, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
