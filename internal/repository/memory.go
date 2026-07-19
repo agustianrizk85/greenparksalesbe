@@ -38,7 +38,20 @@ func newRepository(p persister) (SalesRepository, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &fileRepository{p: p, st: st}, nil
+	r := &fileRepository{p: p, st: st}
+	// Backfill the starter screening questionnaire for stores created before the
+	// feature existed (their state carries none), so it works out of the box
+	// without the Kadep configuring it first. Guarded so it runs at most once.
+	if !st.ScreeningSeeded {
+		if len(st.ScreeningQuestions) == 0 {
+			st.ScreeningQuestions = domain.DefaultScreeningQuestions()
+		}
+		st.ScreeningSeeded = true
+		if err := p.save(st); err != nil {
+			return nil, err
+		}
+	}
+	return r, nil
 }
 
 // persist flushes the current state. Callers must hold the write lock.
@@ -374,6 +387,66 @@ func (r *fileRepository) DeleteKPI(id string) (bool, error) {
 	defer r.mu.Unlock()
 	next, ok := deleteEntity(r.st.KPIs, id)
 	r.st.KPIs = next
+	if !ok {
+		return false, nil
+	}
+	return true, r.persist()
+}
+
+/* ---------------------------- konsumen screening ---------------------------- */
+
+// maxScreeningHistory caps the retained screening submissions (newest kept).
+const maxScreeningHistory = 1000
+
+func (r *fileRepository) ScreeningQuestions() []domain.ScreeningQuestion {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.ScreeningQuestions)
+}
+
+// SetScreeningQuestions replaces the whole questionnaire, assigning a stable id
+// to any new question and normalising the order to the given sequence.
+func (r *fileRepository) SetScreeningQuestions(qs []domain.ScreeningQuestion) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range qs {
+		if qs[i].EntID == "" {
+			qs[i].EntID = newID("scq")
+		}
+		qs[i].Order = i + 1
+	}
+	r.st.ScreeningQuestions = qs
+	return r.persist()
+}
+
+func (r *fileRepository) ScreeningSubmissions() []domain.ScreeningSubmission {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.ScreeningSubmissions)
+}
+
+// SaveScreeningSubmission upserts a submission (create when _id empty), keeping
+// the list newest-first and capped.
+func (r *fileRepository) SaveScreeningSubmission(s domain.ScreeningSubmission) (domain.ScreeningSubmission, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s.EntID == "" {
+		s.EntID = newID("scr")
+		r.st.ScreeningSubmissions = append([]domain.ScreeningSubmission{s}, r.st.ScreeningSubmissions...)
+	} else {
+		r.st.ScreeningSubmissions = upsertEntity(r.st.ScreeningSubmissions, s)
+	}
+	if len(r.st.ScreeningSubmissions) > maxScreeningHistory {
+		r.st.ScreeningSubmissions = r.st.ScreeningSubmissions[:maxScreeningHistory]
+	}
+	return s, r.persist()
+}
+
+func (r *fileRepository) DeleteScreeningSubmission(id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next, ok := deleteEntity(r.st.ScreeningSubmissions, id)
+	r.st.ScreeningSubmissions = next
 	if !ok {
 		return false, nil
 	}

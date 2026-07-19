@@ -36,6 +36,16 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	mux.HandleFunc("GET /api/ai/alerts", h.requireAuth(h.aiAlerts))
 	mux.HandleFunc("GET /api/kpis", h.requireAuth(h.kpis))
 
+	// ---- konsumen screening ----
+	// Any logged-in sales user reads the questionnaire + runs an assessment;
+	// staff see only their own submissions. Managing the questions and deleting
+	// submissions is admin (Kadep) only.
+	mux.HandleFunc("GET /api/screening/questions", h.requireAuth(h.screeningQuestions))
+	mux.HandleFunc("PUT /api/screening/questions", h.requireAdmin(h.setScreeningQuestions))
+	mux.HandleFunc("GET /api/screening/submissions", h.requireAuth(h.screeningSubmissions))
+	mux.HandleFunc("POST /api/screening/assess", h.requireAuth(h.assessScreening))
+	mux.HandleFunc("DELETE /api/screening/submissions/{id}", h.requireAdmin(h.deleteScreeningSubmission))
+
 	// ---- import / upload pipeline (admin) ----
 	mux.HandleFunc("POST /api/import/preview", h.requireAdmin(h.importPreview))
 	mux.HandleFunc("POST /api/import/approve", h.requireAdmin(h.importApprove))

@@ -71,6 +71,15 @@ type SalesRepository interface {
 	// ResetData clears all dashboard data back to empty (reversible via history).
 	ResetData(by, when string) (domain.ImportRecord, error)
 
+	// ---- konsumen screening ----
+	// Questions are a singleton set the admin (Kadep) replaces as a whole.
+	ScreeningQuestions() []domain.ScreeningQuestion
+	SetScreeningQuestions([]domain.ScreeningQuestion) error
+	// Submissions are appended per completed screening (newest first, capped).
+	ScreeningSubmissions() []domain.ScreeningSubmission
+	SaveScreeningSubmission(domain.ScreeningSubmission) (domain.ScreeningSubmission, error)
+	DeleteScreeningSubmission(id string) (bool, error)
+
 	// Revision returns a counter that bumps on every write (FE realtime refresh).
 	Revision() int64
 

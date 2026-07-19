@@ -32,6 +32,16 @@ type state struct {
 	SaleRows   []domain.SaleRow                 `json:"saleRows,omitempty"`
 	Users      []storeUser                      `json:"users"`
 	Imports    []importEntry                    `json:"imports,omitempty"`
+
+	// Konsumen Screening: the Kadep-configured questionnaire + every completed
+	// screening. Kept out of the dashboard payload (separate endpoints) since it
+	// is an operational tool, not war-room analytics.
+	ScreeningQuestions   []domain.ScreeningQuestion   `json:"screeningQuestions,omitempty"`
+	ScreeningSubmissions []domain.ScreeningSubmission `json:"screeningSubmissions,omitempty"`
+	// ScreeningSeeded marks that the starter questionnaire was already installed,
+	// so stores created before the feature existed get it backfilled exactly once
+	// (and a deliberate "delete all questions" by the Kadep is never re-seeded).
+	ScreeningSeeded bool `json:"screeningSeeded,omitempty"`
 }
 
 // snapshot captures the full dashboard state so an import or a reset can be
@@ -122,6 +132,10 @@ func seedState() *state {
 		Alerts:     []domain.Alert{},
 		KPIs:       []domain.KPI{},
 		Users:      seedUsers(),
+		// Ship a usable starter questionnaire; the Kadep customises it in-app.
+		ScreeningQuestions:   domain.DefaultScreeningQuestions(),
+		ScreeningSubmissions: []domain.ScreeningSubmission{},
+		ScreeningSeeded:      true,
 	}
 }
 

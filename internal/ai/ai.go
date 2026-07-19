@@ -79,29 +79,40 @@ type chatResponse struct {
 
 // Alerts asks the model to analyse the dashboard and return prioritised alerts.
 func (c *Client) Alerts(ctx context.Context, d *domain.Dashboard) ([]domain.Alert, error) {
-	if !c.Configured() {
-		return nil, fmt.Errorf("OpenRouter belum dikonfigurasi (set OPENROUTER_API_KEY)")
-	}
-
 	grounding, err := buildGrounding(d)
 	if err != nil {
 		return nil, err
 	}
+	content, err := c.complete(ctx, systemPrompt,
+		"DATA SALES (JSON, sumber kebenaran):\n"+grounding+
+			"\n\nHasilkan AI Alert & Action Plan sebagai JSON array sekarang.",
+		0.3, 900)
+	if err != nil {
+		return nil, err
+	}
+	return parseAlerts(content)
+}
+
+// complete runs one chat completion and returns the assistant message content.
+// Shared by Alerts and Screen so the OpenRouter wire plumbing lives in one place.
+func (c *Client) complete(ctx context.Context, system, user string, temperature float64, maxTokens int) (string, error) {
+	if !c.Configured() {
+		return "", fmt.Errorf("OpenRouter belum dikonfigurasi (set OPENROUTER_API_KEY)")
+	}
 
 	reqBody, _ := json.Marshal(chatRequest{
 		Model:       c.model,
-		Temperature: 0.3,
-		MaxTokens:   900,
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: "DATA SALES (JSON, sumber kebenaran):\n" + grounding +
-				"\n\nHasilkan AI Alert & Action Plan sebagai JSON array sekarang."},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
 		},
 	})
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.key)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -110,30 +121,25 @@ func (c *Client) Alerts(ctx context.Context, d *domain.Dashboard) ([]domain.Aler
 
 	res, err := c.http.Do(httpReq)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	var parsed chatResponse
 	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("OpenRouter: gagal baca respons: %w", err)
+		return "", fmt.Errorf("OpenRouter: gagal baca respons: %w", err)
 	}
 	if res.StatusCode != http.StatusOK {
 		msg := "status " + res.Status
 		if parsed.Error != nil {
 			msg = parsed.Error.Message
 		}
-		return nil, fmt.Errorf("OpenRouter %d: %s", res.StatusCode, msg)
+		return "", fmt.Errorf("OpenRouter %d: %s", res.StatusCode, msg)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("OpenRouter: respons kosong")
+		return "", fmt.Errorf("OpenRouter: respons kosong")
 	}
-
-	alerts, err := parseAlerts(parsed.Choices[0].Message.Content)
-	if err != nil {
-		return nil, err
-	}
-	return alerts, nil
+	return parsed.Choices[0].Message.Content, nil
 }
 
 // buildGrounding marshals the decision-relevant slice of the dashboard (without

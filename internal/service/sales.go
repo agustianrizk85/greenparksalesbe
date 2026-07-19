@@ -63,6 +63,13 @@ type SalesService interface {
 	RollbackImport(id string) (domain.ImportRecord, error)
 	ResetData(by string) (domain.ImportRecord, error)
 	Revision() int64
+
+	// konsumen screening
+	ScreeningQuestions() []domain.ScreeningQuestion
+	SetScreeningQuestions([]domain.ScreeningQuestion) error
+	ScreeningSubmissions() []domain.ScreeningSubmission
+	SaveScreeningSubmission(domain.ScreeningSubmission) (domain.ScreeningSubmission, error)
+	DeleteScreeningSubmission(id string) (bool, error)
 }
 
 type salesService struct {
@@ -237,3 +244,21 @@ func (s *salesService) SaveKPI(k domain.KPI) (domain.KPI, error) {
 	return s.repo.SaveKPI(k)
 }
 func (s *salesService) DeleteKPI(id string) (bool, error) { return s.repo.DeleteKPI(id) }
+
+/* ---- konsumen screening ---- */
+
+func (s *salesService) ScreeningQuestions() []domain.ScreeningQuestion {
+	return s.repo.ScreeningQuestions()
+}
+func (s *salesService) SetScreeningQuestions(qs []domain.ScreeningQuestion) error {
+	return s.repo.SetScreeningQuestions(qs)
+}
+func (s *salesService) ScreeningSubmissions() []domain.ScreeningSubmission {
+	return s.repo.ScreeningSubmissions()
+}
+func (s *salesService) SaveScreeningSubmission(sub domain.ScreeningSubmission) (domain.ScreeningSubmission, error) {
+	return s.repo.SaveScreeningSubmission(sub)
+}
+func (s *salesService) DeleteScreeningSubmission(id string) (bool, error) {
+	return s.repo.DeleteScreeningSubmission(id)
+}
