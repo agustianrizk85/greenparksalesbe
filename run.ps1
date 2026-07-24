@@ -13,7 +13,9 @@ $here = $PSScriptRoot
 # (dashboard@keen-scion-499708-j2.iam.gserviceaccount.com) has read access to
 # the spreadsheet; keep the file git-ignored.
 if (-not $env:SALES_GOOGLE_CREDENTIALS) {
-  $env:SALES_GOOGLE_CREDENTIALS = Join-Path $here "..\greenparksales\keen-scion-499708-j2-b437f6d12fe7.json"
+  # Kredensial disalin ke folder ini sendiri (dulu di ..\greenparksales, tapi
+  # folder FE itu bisa dipindah/diarsipkan sewaktu-waktu) — no cross-folder dep.
+  $env:SALES_GOOGLE_CREDENTIALS = Join-Path $here "keen-scion-499708-j2-b437f6d12fe7.json"
 }
 if (-not (Test-Path $env:SALES_GOOGLE_CREDENTIALS)) {
   throw "Kredensial Google tidak ditemukan: $env:SALES_GOOGLE_CREDENTIALS"

@@ -46,6 +46,25 @@ func NewRouter(h *Handler, allowOrigin string) http.Handler {
 	mux.HandleFunc("POST /api/screening/assess", h.requireAuth(h.assessScreening))
 	mux.HandleFunc("DELETE /api/screening/submissions/{id}", h.requireAdmin(h.deleteScreeningSubmission))
 
+	// ---- SKP (Surat Konfirmasi Pesanan) ----
+	// Any logged-in sales user reads the project templates (to prefill a new
+	// SKP) and creates/edits their own SKPs; only the Kadep (admin) manages the
+	// project templates. Editing/deleting an SKP is restricted to its author or
+	// the Kadep (enforced in the handler, since it needs to inspect ownership).
+	mux.HandleFunc("GET /api/skp/projects", h.requireAuth(h.skpProjectTemplates))
+	mux.HandleFunc("POST /api/skp/projects", h.requireAdmin(h.saveSkpProjectTemplate))
+	mux.HandleFunc("DELETE /api/skp/projects/{id}", h.requireAdmin(h.deleteSkpProjectTemplate))
+	mux.HandleFunc("GET /api/skp", h.requireAuth(h.skpList))
+	mux.HandleFunc("POST /api/skp", h.requireAuth(h.saveSkp))
+	mux.HandleFunc("DELETE /api/skp/{id}", h.requireAuth(h.deleteSkp))
+
+	// ---- Master Booking (unit status: tersedia/booked/terjual) ----
+	// Any logged-in sales user reads it (avoid double-booking a unit); only the
+	// Kadep (admin) edits directly — new SKPs auto-flip a unit to "booked".
+	mux.HandleFunc("GET /api/skp/units", h.requireAuth(h.unitBookings))
+	mux.HandleFunc("POST /api/skp/units", h.requireAdmin(h.saveUnitBooking))
+	mux.HandleFunc("DELETE /api/skp/units/{id}", h.requireAdmin(h.deleteUnitBooking))
+
 	// ---- import / upload pipeline (admin) ----
 	mux.HandleFunc("POST /api/import/preview", h.requireAdmin(h.importPreview))
 	mux.HandleFunc("POST /api/import/approve", h.requireAdmin(h.importApprove))

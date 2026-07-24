@@ -42,6 +42,12 @@ type state struct {
 	// so stores created before the feature existed get it backfilled exactly once
 	// (and a deliberate "delete all questions" by the Kadep is never re-seeded).
 	ScreeningSeeded bool `json:"screeningSeeded,omitempty"`
+
+	// SKP (Surat Konfirmasi Pesanan): per-project master template (Kadep-owned)
+	// + every issued SKP (buyer + unit snapshot, ready to print).
+	SkpProjectTemplates []domain.SkpProjectTemplate `json:"skpProjectTemplates,omitempty"`
+	SkpList             []domain.Skp                `json:"skpList,omitempty"`
+	UnitBookings        []domain.UnitBooking         `json:"unitBookings,omitempty"`
 }
 
 // snapshot captures the full dashboard state so an import or a reset can be
@@ -136,6 +142,9 @@ func seedState() *state {
 		ScreeningQuestions:   domain.DefaultScreeningQuestions(),
 		ScreeningSubmissions: []domain.ScreeningSubmission{},
 		ScreeningSeeded:      true,
+		SkpProjectTemplates:  []domain.SkpProjectTemplate{},
+		SkpList:              []domain.Skp{},
+		UnitBookings:         []domain.UnitBooking{},
 	}
 }
 
@@ -227,11 +236,11 @@ func deleteEntity[T domain.Entity](xs []T, id string) ([]T, bool) {
 	return xs, false
 }
 
-// clone returns a shallow copy of a slice (so reads never alias the stored slice).
+// clone returns a shallow copy of a slice (so reads never alias the stored
+// slice). Always non-nil so callers that json.Marshal the result get "[]"
+// instead of "null" for an empty list — frontend consumers read straight off
+// the response array (.length/.map) without a null guard.
 func clone[T any](xs []T) []T {
-	if xs == nil {
-		return nil
-	}
 	out := make([]T, len(xs))
 	copy(out, xs)
 	return out

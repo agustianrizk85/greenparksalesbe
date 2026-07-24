@@ -80,6 +80,21 @@ type SalesRepository interface {
 	SaveScreeningSubmission(domain.ScreeningSubmission) (domain.ScreeningSubmission, error)
 	DeleteScreeningSubmission(id string) (bool, error)
 
+	// ---- SKP (Surat Konfirmasi Pesanan) ----
+	// Project templates are the Kadep-managed fixed data (proyek + rekening).
+	SkpProjectTemplates() []domain.SkpProjectTemplate
+	SaveSkpProjectTemplate(domain.SkpProjectTemplate) (domain.SkpProjectTemplate, error)
+	DeleteSkpProjectTemplate(id string) (bool, error)
+	// Issued SKPs, newest first.
+	SkpList() []domain.Skp
+	SaveSkp(domain.Skp) (domain.Skp, error)
+	DeleteSkp(id string) (bool, error)
+
+	// Master Booking: unit availability status per project (tersedia/booked/terjual).
+	UnitBookings() []domain.UnitBooking
+	SaveUnitBooking(domain.UnitBooking) (domain.UnitBooking, error)
+	DeleteUnitBooking(id string) (bool, error)
+
 	// Revision returns a counter that bumps on every write (FE realtime refresh).
 	Revision() int64
 

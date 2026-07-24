@@ -70,6 +70,19 @@ type SalesService interface {
 	ScreeningSubmissions() []domain.ScreeningSubmission
 	SaveScreeningSubmission(domain.ScreeningSubmission) (domain.ScreeningSubmission, error)
 	DeleteScreeningSubmission(id string) (bool, error)
+
+	// SKP (Surat Konfirmasi Pesanan)
+	SkpProjectTemplates() []domain.SkpProjectTemplate
+	SaveSkpProjectTemplate(domain.SkpProjectTemplate) (domain.SkpProjectTemplate, error)
+	DeleteSkpProjectTemplate(id string) (bool, error)
+	SkpList() []domain.Skp
+	SaveSkp(domain.Skp) (domain.Skp, error)
+	DeleteSkp(id string) (bool, error)
+
+	// Master Booking
+	UnitBookings() []domain.UnitBooking
+	SaveUnitBooking(domain.UnitBooking) (domain.UnitBooking, error)
+	DeleteUnitBooking(id string) (bool, error)
 }
 
 type salesService struct {
@@ -261,4 +274,37 @@ func (s *salesService) SaveScreeningSubmission(sub domain.ScreeningSubmission) (
 }
 func (s *salesService) DeleteScreeningSubmission(id string) (bool, error) {
 	return s.repo.DeleteScreeningSubmission(id)
+}
+
+/* ---- SKP (Surat Konfirmasi Pesanan) ---- */
+
+func (s *salesService) SkpProjectTemplates() []domain.SkpProjectTemplate {
+	return s.repo.SkpProjectTemplates()
+}
+func (s *salesService) SaveSkpProjectTemplate(t domain.SkpProjectTemplate) (domain.SkpProjectTemplate, error) {
+	return s.repo.SaveSkpProjectTemplate(t)
+}
+func (s *salesService) DeleteSkpProjectTemplate(id string) (bool, error) {
+	return s.repo.DeleteSkpProjectTemplate(id)
+}
+func (s *salesService) SkpList() []domain.Skp {
+	return s.repo.SkpList()
+}
+func (s *salesService) SaveSkp(skp domain.Skp) (domain.Skp, error) {
+	return s.repo.SaveSkp(skp)
+}
+func (s *salesService) DeleteSkp(id string) (bool, error) {
+	return s.repo.DeleteSkp(id)
+}
+
+/* ---- Master Booking ---- */
+
+func (s *salesService) UnitBookings() []domain.UnitBooking {
+	return s.repo.UnitBookings()
+}
+func (s *salesService) SaveUnitBooking(u domain.UnitBooking) (domain.UnitBooking, error) {
+	return s.repo.SaveUnitBooking(u)
+}
+func (s *salesService) DeleteUnitBooking(id string) (bool, error) {
+	return s.repo.DeleteUnitBooking(id)
 }

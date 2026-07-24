@@ -453,6 +453,107 @@ func (r *fileRepository) DeleteScreeningSubmission(id string) (bool, error) {
 	return true, r.persist()
 }
 
+/* ---------------------------- SKP (Surat Konfirmasi Pesanan) ---------------------------- */
+
+// maxSkpHistory caps the retained issued SKPs (newest kept).
+const maxSkpHistory = 5000
+
+func (r *fileRepository) SkpProjectTemplates() []domain.SkpProjectTemplate {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.SkpProjectTemplates)
+}
+
+// SaveSkpProjectTemplate upserts a project template (create when _id empty).
+func (r *fileRepository) SaveSkpProjectTemplate(t domain.SkpProjectTemplate) (domain.SkpProjectTemplate, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t.EntID == "" {
+		t.EntID = newID("skpt")
+		r.st.SkpProjectTemplates = append(r.st.SkpProjectTemplates, t)
+	} else {
+		r.st.SkpProjectTemplates = upsertEntity(r.st.SkpProjectTemplates, t)
+	}
+	return t, r.persist()
+}
+
+func (r *fileRepository) DeleteSkpProjectTemplate(id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next, ok := deleteEntity(r.st.SkpProjectTemplates, id)
+	r.st.SkpProjectTemplates = next
+	if !ok {
+		return false, nil
+	}
+	return true, r.persist()
+}
+
+func (r *fileRepository) SkpList() []domain.Skp {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.SkpList)
+}
+
+// SaveSkp upserts an issued SKP (create when _id empty), keeping the list
+// newest-first and capped.
+func (r *fileRepository) SaveSkp(s domain.Skp) (domain.Skp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s.EntID == "" {
+		s.EntID = newID("skp")
+		r.st.SkpList = append([]domain.Skp{s}, r.st.SkpList...)
+	} else {
+		r.st.SkpList = upsertEntity(r.st.SkpList, s)
+	}
+	if len(r.st.SkpList) > maxSkpHistory {
+		r.st.SkpList = r.st.SkpList[:maxSkpHistory]
+	}
+	return s, r.persist()
+}
+
+func (r *fileRepository) DeleteSkp(id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next, ok := deleteEntity(r.st.SkpList, id)
+	r.st.SkpList = next
+	if !ok {
+		return false, nil
+	}
+	return true, r.persist()
+}
+
+/* ---------------------------- Master Booking (unit status) ---------------------------- */
+
+func (r *fileRepository) UnitBookings() []domain.UnitBooking {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return clone(r.st.UnitBookings)
+}
+
+// SaveUnitBooking upserts a unit's booking status (create when _id empty).
+func (r *fileRepository) SaveUnitBooking(u domain.UnitBooking) (domain.UnitBooking, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if u.EntID == "" {
+		u.EntID = newID("unit")
+		r.st.UnitBookings = append(r.st.UnitBookings, u)
+	} else {
+		r.st.UnitBookings = upsertEntity(r.st.UnitBookings, u)
+	}
+	return u, r.persist()
+}
+
+func (r *fileRepository) DeleteUnitBooking(id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next, ok := deleteEntity(r.st.UnitBookings, id)
+	r.st.UnitBookings = next
+	if !ok {
+		return false, nil
+	}
+	return true, r.persist()
+}
+
 /* ---------------------------- import ---------------------------- */
 
 // maxImportHistory caps how many history entries (with undo snapshots) we keep.
